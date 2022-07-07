@@ -1,0 +1,124 @@
+#Generate overlaps between epigenetic annotations and MPRA regions
+library(dplyr)
+library(ggplot2)
+
+#####################################
+#first overlap bed files on compute cluster: annotations and MPRA regions
+#####################################
+#annotations without scores, with list of the annotations in Slist
+while read x; do sbatch -p medium -t 5-00 --wrap "python doit_parallel.py /n/no_backup2/seidman/sum/for_j/to_include/bed_hg38/ncDNVs/prioritized_DNVs /n/no_backup2/seidman/sum/for_j/to_include/bed_hg38/repeat ${x} /n/no_backup2/seidman/sum/for_j/to_include/bed_hg38/repeat/missing_prioritized_DNV_overlap"; done < /n/no_backup2/seidman/sum/for_j/to_include/bed_hg38/repeat/Slist
+
+#sum
+python sumup.py -d prioritized_DNV_overlap/ -o prioritized_DNV_overlap_model1_2 
+
+#next annotations with scores in 4th column of bed file, with list of the annotations in Rlist_score
+while read x; do sbatch -p medium -t 5-00 --wrap "python doit_scores_parallel.py /n/no_backup2/seidman/sum/for_j/to_include/bed_hg38/ncDNVs/prioritized_DNVs /n/no_backup2/seidman/sum/for_j/to_include/bed_hg38/repeat ${x} /n/no_backup2/seidman/sum/for_j/to_include/bed_hg38/repeat/missing_prioritized_DNV_score_overlap"; done < Rlist_score 
+
+#sum and average
+cd /n/no_backup2/seidman/sum/for_j/to_include/bed_hg38/model2_scores
+python score_sumup.py -d prioritized_DNV_overlap -o prioritize_dnv_mpra_score2_compare_sum
+python score_ave.py -d prioritized_DNV_overlap -o prioritize_dnv_mpra_score2_compare_ave
+
+
+#####################################
+# map names of annos to names of bed files for reference
+#####################################
+encode_all <- read.delim("encode_model",stringsAsFactors = F, header = F)
+encode_all$V1 <- gsub("new_bed/ENCODE/", "", encode_all$V1)
+encode_all$V1 <- gsub("bed3/small_", "", encode_all$V1)
+encode_all$V1 <- gsub(".bed", "", encode_all$V1)
+encode_all <- encode_all[!duplicated(encode_all$V1),] 
+encode_details <- read.delim("encode_metadata.tsv", stringsAsFactors = F)
+encode_included_details <- encode_details %>% filter(File.accession %in% encode_all)
+encode_lookup <- encode_all[!encode_all %in% encode_included_details$File.accession]
+table(encode_included_details$Assay)
+encode_chromatin <- encode_included_details %>% filter(Assay %in% c("Histone ChIP-seq"))
+
+cistrome <- read.delim("../cistrome.txt", stringsAsFactors = F)
+table(cistrome$Factor)
+cistrome$file <- paste(cistrome$DCid, "_sort_peaks_narrowPeak", sep = "")
+cistrome$label <- paste(cistrome$Factor, cistrome$Tissue_type, cistrome$Cell_type, cistrome$file, sep = "_")
+cistrome$score_file <- paste("score_", cistrome$file, sep = "")
+cistrome$score_label <- paste("score_", cistrome$label, sep = "")
+
+#####################################
+##now use those overlap counts to generate a model
+#####################################
+load("sum_counts_merged_filtered_11Mar22.rda")
+overlap <- sum_counts_merged[rownames(sum_counts_merged) %in% wt_to_merge$name,!colnames(sum_counts_merged) %in% c("log", "active")]
+nrow(overlap)
+ncol(overlap)
+overlap <- overlap %>% as.matrix()
+rna_dna_ratio <- sum_counts_merged$log[rownames(sum_counts_merged) %in% wt_to_merge$name]
+library(glmnet)
+fit1 <- glmnet(overlap, rna_dna_ratio, family = "gaussian")
+
+#choose lamda value
+cv_output <- cv.glmnet(overlap, rna_dna_ratio, family="gaussian")
+plot(cv_output)
+cv_output
+plot(fit1)
+abline(v=2^(cv_output$lambda.min/10))
+coef(cv_output)
+fit2 <- predict(fit1, type="response", newx=overlap, newy=rna_dna_ratio, s=cv_output$lambda.min/10)
+
+fit1_coefficients <- coef(fit1, s = (cv_output$lambda.min)/10)
+b = as.data.frame(summary(fit1_coefficients))
+anno <- colnames(overlap)[b$i-1]
+anno <- c("intercept", anno)
+fit1_p <- sig(fit1, s = (cv_output$lambda.min))
+b = as.data.frame(summary(fit1_coefficients))
+b$anno <- anno
+
+#now look at correlation for only positive
+overlapP <- sum_counts_merged[rownames(sum_counts_merged) %in% active_names,!colnames(sum_counts_merged) %in% c("rna_dna_ratio", "log", "active")]
+overlapP <- overlapP %>% as.matrix()
+nrow(overlapP)
+rna_dna_ratioP <- sum_counts_merged$log[rownames(sum_counts_merged) %in% rownames(overlapP)]
+fit1p <- glmnet(overlapP, rna_dna_ratioP, family = "gaussian")
+
+cv_output <- cv.glmnet(overlapP, rna_dna_ratioP, family="gaussian")
+plot(cv_output)
+cv_output
+plot(fit1p)
+abline(v=2^(cv_output$lambda.min/10), col="red", lwd=3, lty=2)
+coef(cv_output)
+idmin = match(cv_output$lambda.min, cv_output$lambda)
+fit2p <- predict(fit1p, type="response", newx=overlapP, newy=rna_dna_ratioP, s=cv_output$lambda.min/10)
+
+fit1_coefficients <- coef(fit1p, s = (cv_output$lambda.min)/10)
+b = as.data.frame(summary(fit1_coefficients))
+anno <- colnames(overlapP)[b$i-1]
+anno <- c("intercept", anno)
+b$anno <- anno
+
+########################
+#binary lasso regression
+sum_counts_mergedX <- sum_counts_mergedX[rownames(sum_counts_mergedX) %in% wt_to_merge$name,]
+sum_counts_mergedX <- sum_counts_mergedX[rownames(sum_counts_mergedX) %in% active_chd$peak_name,]
+features <- sum_counts_mergedX[,!colnames(sum_counts_mergedX) %in% c("rna_dna_ratio", "log", "active")]
+overlap <- features %>% as.matrix()
+outcome <- sum_counts_mergedX$active
+active <- as.factor(outcome)
+
+#choose lamda value
+fit1 <- glmnet(overlap, active, family="binomial", alpha = 1)
+cv_output <- cv.glmnet(overlap, active, family="binomial", alpha = 1)
+plot(cv_output)
+cv_output
+plot(fit1)
+abline(v=cv_output$lambda.min)
+best_lambda <- cv_output$lambda.min
+best_model <- glmnet(overlap, outcome, alpha = 1, lambda = best_lambda/10)
+coef(best_model)
+
+summary <- summary(overlap) %>% as.data.frame()
+fit <- predict(best_model, type="response", newx=overlap, s=best_lambda)
+
+#select only those annos with coefficients
+fit_coefficients <- coef(best_model, s = best_lambda)
+b = as.data.frame(summary(fit_coefficients))
+anno <- colnames(overlap)[b$i-1]
+anno <- c("intercept", anno)
+b = as.data.frame(summary(fit_coefficients))
+b$anno <- anno
