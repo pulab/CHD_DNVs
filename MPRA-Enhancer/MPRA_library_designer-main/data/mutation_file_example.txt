@@ -1,0 +1,4 @@
+Chrom	POS	REF	ALT	category	mutation
+chr10	16830096	C	A	within15kb_tss:SAMD11:hhe_gene	R
+chr14	56991074	G	A	heartENN	R
+chr16	67425497	G	A	within15kb_tss:SAMD11:hhe_gene	R
