@@ -2,18 +2,17 @@
 
 This is the first part of the MADAP (MPRA Design and Analysis Package).
 
-############ package/tools needed##############
+###package/tools needed
 
 python2.7+, 
 packages: Math,string,sys,getopt,os
 
 bedtools v >=2.28.0
 
-###############################################
-A schematic overview of MPRA_library_designer
+##A schematic overview of MPRA_library_designer
 ----------------------------------------------------------------------
 ![MPRA_library_designer](https://github.com/pulab/CHD_DNVs/assets/66787411/7939882a-bf7e-4722-9b48-542bba6533c7)
-########################
+
 
 ## Installation
 
@@ -66,6 +65,7 @@ examples:
 ```bash
 python ./design_library_v1.0.py -i input_peaks_example.txt -o test --enzyme ATGC -l 400 -s 4 -g ~/database/hg38/hg38.chrom.sizes --fasta ~/database/hg38/hg38.fasta --tiling -b 5 --sublength 180 --only_middle --tiling_mutation 5
 ```
+```bash
 python ./design_library_v1.0.py --mutation mutation_file_example.txt -o test2 --enzyme ATGC -l 170 --fasta hg38.fasta -t
 ```
 ###############################################################
