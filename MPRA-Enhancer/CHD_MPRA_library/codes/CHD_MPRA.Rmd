@@ -39,7 +39,7 @@ source(file = "./MPRA_analyzer.R")
 
 ```{r}
 #inputfile<-"../data/CHD_MPRA_raw_counts_DNA1-4_RNA1-4.txt"
-inputfile<-"../data/CHD_MPRA_raw_counts_DNA1-4_RNA1-4_group.txt"
+inputfile<-"../data/CHD_MPRA_raw_counts_DNA1-4_RNA1-4_group_add_coding.txt"
 data<-read.table(file=inputfile,header=T,row.names = 1)
 head(data)
 ```
@@ -47,12 +47,12 @@ head(data)
 ```{r}
 RNA=data[,c(5:8)]
 DNA=data[,c(1:4)]
-annot=data[,c(9:10)] %>% as.data.frame()
+annot=data[,c(9:11)] %>% as.data.frame()
 rownames(annot)<-rownames(DNA)
-colnames(annot)<-c("groups","region_name")
+colnames(annot)<-c("groups","region_name","Coding")
 data_norm<-create_MPRA_class(RNA=RNA,DNA=DNA,annot=annot)
 ```
-
+##Plot DNA counts distribution
 ```{r}
 DNA_total <- as.data.frame(matrixStats::rowMins(as.matrix(data_norm@DNA)))
 colnames(DNA_total)<-"minDNA"
@@ -63,7 +63,7 @@ ggplot(DNA_total, aes(x = minDNA))+ geom_histogram(binwidth = 5,color="skyblue")
   geom_vline(xintercept = 20,color="skyblue",size=0.4,linetype="dashed")+xlim(0,300)
 #dev.off()
 ```
-
+## DEseq2 to got active enhancers
 ```{r}
 #filter_norm_data <- filter_data(data_norm, dna_filter=0)
 filter_norm_data <-data_norm
@@ -72,7 +72,7 @@ dim(filter_norm_data@DNA)
 filter_norm_data <-DEGseq2_active(filter_norm_data=data_norm)
 sum(filter_norm_data@res$Active)
 ```
-
+##DNA counts distribution
 ```{r}
 filter_norm_data_new <- filter_data(filter_norm_data, dna_filter=20)
 total_number <- length(DNA_total[,1])
@@ -83,6 +83,10 @@ DNA_counts <- data.frame(
   value=c(as.character(total_number),as.character(kept_number),as.character(keptratio))
 )
 DNA_counts
+##4210 ref-alt pair
+##4974 alt 4993 ref
+##136 alt coding
+##140 ref coding
 ```
 
 ```{r}
@@ -90,7 +94,7 @@ filter_norm_data_new <-get_ratio(filter_norm_data_new)
 
 head(filter_norm_data_new@res)
 ```
-
+##Size factor
 ```{r}
 Negative_C <- t(dplyr::select(as.data.frame(t(filter_norm_data_new@now_value)), !contains("::")))
 Positive_C <- t(dplyr::select(as.data.frame(t(filter_norm_data_new@now_value)), contains("::F")))
@@ -101,7 +105,7 @@ filter_norm_data_nc <-MPRA_SizeFactors(filter_norm_data_new,both_C,c(1:4))
 filter_norm_data_nc_normalize_exp<-filter_norm_data_nc@now_value
 dim(filter_norm_data_nc_normalize_exp)
 ```
-
+##PCC cor
 ```{r}
 A_V_cor <- cor(filter_norm_data_nc_normalize_exp)
 p<-corrplot(A_V_cor, method  = "number",order = "alphabet")
@@ -122,11 +126,16 @@ filter_norm_data_scaled$group<-filter_norm_data_nc@annot[rownames(filter_norm_da
 ########add a Group factor to the annotation matrix
 ```
 
-Plot the enhancers activity and rank and group information.
+##Plot the enhancers activity and rank and group information.
 
 ```{r}
 ########Different activities
 filter_norm_data_scaled_grouped <- as.data.frame(filter_norm_data_scaled)
+#FPM_result<-cbind(filter_norm_data_nc@now_value,filter_norm_data_scaled_grouped)
+FPM_result<-cbind(filter_norm_data_nc@DNA, filter_norm_data_nc@RNA,filter_norm_data_nc@now_value,filter_norm_data_scaled_grouped,
+                  filter_norm_data_nc@annot)
+FPM_result<-FPM_result[FPM_result$Coding !=TRUE,]
+write.table(FPM_result,file="CHD_FPM.txt",sep="\t",quote = F)
 ggplot(filter_norm_data_scaled_grouped, aes(x = mean_log_ratio, color=group))+geom_density()+theme_bw()+theme_classic()
 #ggplot(filter_norm_data_scaled_grouped, aes(x = mean_log_ratio))+geom_density()+theme_bw()+theme_classic()
 ##Negative control FDR 0.05
@@ -177,14 +186,14 @@ p_E<- ggplot(filter_norm_data_for_plot, aes(order, final_ES,color=factor(score_g
 A/p_E/B
 ```
 
-This part is for differently enhancers bewteen REF and ALT
+##This part is for differently enhancers bewteen REF and ALT
 
 ```{r}
 inter_join <-split_for_pair(filter_norm_data_nc, vals = c("REF","ALT"),condition = "groups", 
-                            group_by = "region_name",kept_annot = F, kept_res = c("Active"))
-inter_join <- Diff_enhancers(inter_join,c(6:9),c(1:4))
+                            group_by = "region_name",kept_annot = c("Coding"), kept_res = c("Active"))
+inter_join <- Diff_enhancers(inter_join,c(7:10),c(1:4))
 
-inter_join$REF <- rowMeans(inter_join[,6:9])
+inter_join$REF <- rowMeans(inter_join[,7:10])
 inter_join$ALT <- rowMeans(inter_join[,1:4])
 inter_join$fold <- inter_join$ALT-inter_join$REF
 inter_join$qvalue_0_05 <- 0
@@ -199,9 +208,10 @@ inter_join$final_sig <-0
 inter_join$final_sig[inter_join$qvalue_0_05 >0 &  inter_join$fold >= 0.58 & inter_join$active >0] <-2
 inter_join$final_sig[inter_join$qvalue_0_05 >0 & inter_join$fold <= -0.58 & inter_join$active >0] <-1
 head(inter_join)
-#write.table(inter_join,file="CHD_variant_fold_pvalue_new_FPM20_add_1_newest.txt",sep="\t",quote = F)
-#pdf("Diff_enhancers_CHD.pdf",width = 9,height = 7)
-ggplot(inter_join,aes(REF, ALT,color=factor(final_sig,levels=c('0','1','2')), alpha =factor(qvalue_0_05,levels=c("0","1"))))+
+inter_join_filter <-inter_join[inter_join$Coding_ALT==FALSE,]
+write.table(inter_join_filter,file="CHD_diff_Enhancers.txt",sep="\t",quote = F)
+pdf("Diff_enhancers_CHD.pdf",width = 9.5,height = 7)
+ggplot(inter_join_filter,aes(REF, ALT,color=factor(final_sig,levels=c('0','1','2')), alpha =factor(qvalue_0_05,levels=c("0","1"))))+
   geom_point()+theme_bw()+theme_classic()+geom_abline(slope = 1,color="black",size=0.2,linetype="dashed")+
   geom_abline(slope = 1, intercept = 0.58,color="black",size=0.2,linetype="dashed")+
   geom_abline(slope=1,intercept = -0.58,color="black",size=0.2,linetype="dashed")+
@@ -209,12 +219,12 @@ ggplot(inter_join,aes(REF, ALT,color=factor(final_sig,levels=c('0','1','2')), al
   scale_alpha_manual(breaks = c("0", "1"), values=c(0.2, 1))+
   xlim(-4,4)+ylim(-4,4)
 
-#dev.off()
+dev.off()
 ```
 
 ```{r}
 ######Plot different groups enhancers activity
-sub2 <-inter_join[inter_join$final_sig !=0,c("REF","ALT","final_sig")]   
+sub2 <-inter_join_filter[inter_join_filter$final_sig !=0,c("REF","ALT","final_sig")]   
 sub2$final_sig3 <-paste0("x",sub2$final_sig)
 sub2[sub2$final_sig==1,]$final_sig3 <-"LoF"
 sub2[sub2$final_sig==2,]$final_sig3 <-"GoF"
@@ -233,7 +243,7 @@ Anewdata <-filter_norm_data_nc@res
 Ql<-quantile(Anewdata[(Anewdata$Active==1),"mean_log_ratio"], 0.05)
 Qh<-quantile(Anewdata[(Anewdata$Active==1),"mean_log_ratio"], 0.95)
 #pdf("REF_ALT_GoF_LoF_boxplot_2.pdf")
-ggplot(sub4_for_plot, aes(y=factor(group,levels=rev(c("GoF_REF","LoF_REF","GoF_ALT","LoF_ALT","Neg",
+ggplot(sub4_for_plot, aes(y=factor(group,levels=rev(c("GoF_REF","GoF_ALT","LoF_REF","LoF_ALT","Neg",
                                                   "Pos"))),x=as.numeric(mean_log_ratio)))+
   geom_violin(aes(fill = group))+
   geom_boxplot(aes(fill = group),color="white",width = 0.2) + theme_bw()+
