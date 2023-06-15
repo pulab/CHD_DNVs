@@ -285,7 +285,8 @@ Enrich_score <- function(datasets, groups_col , value_col , order_col){
     pvalue <- c(pvalue, p_PC1)
     groups_names <- c(groups_names,cols_name)
     datasets3$score_group <- cols_name
-    datasets3$final_ES <- datasets3$Enrich_score - datasets3$negative_Enrich_score
+    #datasets3$final_ES <- datasets3$Enrich_score - datasets3$negative_Enrich_score
+    datasets3$final_ES <- datasets3$Enrich_score 
     #if (max(abs(datasets3$negative_Enrich_score)) > max(abs(datasets3$Enrich_score))){
     #  datasets3$final_ES <-
     #  datasets3$negative_NES
@@ -422,9 +423,90 @@ split_for_pair <- function(df,condition,vals=null,group_by,kept_annot=T,kept_res
   }
 }
 
+library(MPRAnalyze)
+trans_to_MPRAnalyze<-function(data_norm,condition_DNA=NULL,batch_DNA=NULL,barcode_DNA=NULL,
+                              condition_RNA=NULL,batch_RNA=NULL,barcode_RNA=NULL, control=NULL,...)
+{
+  nDNA<-length(data_norm@raw_DNA)
+  region<-dim(data_norm@raw_DNA)[1]
+  nRNA<-length(data_norm@raw_RNA)
+  controls<-c(rep(FALSE,region))
+  colAnnot <- data.frame(batch=c(rep(1,nDNA)),
+                         condition=c(rep("samples",nDNA)),
+                         barcode=c(rep(1,nDNA))
+  )
+  colAnnot2 <- data.frame(batch=c(rep(1,nRNA)),
+                          conditon=c(rep("samples",nRNA)),
+                          barcode=c(rep(1,nRNA))
+  )
+  rownames(colAnnot)<-colnames(data_norm@raw_DNA)
+  rownames(colAnnot2)<-colnames(data_norm@raw_RNA)
+  
+  if (!is.null (condition_DNA)){
+    colAnnot$condition<-condition_DNA
+  }
+  if (!is.null (batch_DNA)){
+    colAnnot$batch<-batch_DNA
+  }
+  if (!is.null (barcode_DNA)){
+    colAnnot$barcode<-barcode_DNA
+  }
+  if (!is.null (condition_RNA)){
+    colAnnot2$condition<-condition_RNA
+  }
+  if (!is.null (batch_RNA)){
+    colAnnot2$batch<-batch_RNA
+  }
+  if (!is.null (barcode_RNA)){
+    colAnnot2$barcode<-barcode_RNA
+  }
+  if (!is.null (control)){
+    controls<-control
+  }
+  obj <- MpraObject(dnaCounts = as.matrix(data_norm@raw_DNA), rnaCounts = as.matrix(data_norm@raw_RNA), 
+                    dnaAnnot = colAnnot, rnaAnnot = colAnnot2, 
+                    controls = controls,...)
+  return(obj)
+}
 
+get_fisher_p <- function(df){
+  mat <- matrix(as.numeric(df[c(1:4)]), ncol=2)
+  f <- fisher.test(as.table(mat), alt="two.sided")
+  return(f$p.value)
+}
+get_fisher_odds <- function(df){
+  mat <- matrix(as.numeric(df[c(1:4)]), ncol=2)
+  f <- fisher.test(as.table(mat), alt="two.sided")
+  return(f$estimate)
+}
 
-
+Get_odds_ratio <-function(data, guess_cols, background_cols,min_value=0) {
+  Odd_result<-data[,c(guess_cols,background_cols)]
+  SSA_matrix_merge=data.frame(row.names = rownames(data))
+  for (cols_name in guess_cols) {
+    total_number <-sum(data[,cols_name])
+    for (bgc_name in background_cols){
+      total_bg_number <- sum(data[,bgc_name])
+      Odd_result$guss_res <-total_number- Odd_result[,cols_name]
+      Odd_result$bdg_res <-total_bg_number- Odd_result[,bgc_name]
+      Odd_input<-as.data.frame(Odd_result[,c(cols_name, "guss_res", bgc_name, "bdg_res")])
+      res_list_p <- as.data.frame(apply(Odd_input, 1,  get_fisher_p))
+      colnames(res_list_p)<-paste0(cols_name,"_",bgc_name,"_","Pvalue")
+      res_list_odds <- as.data.frame(apply(Odd_input, 1,  get_fisher_odds))
+      res_list_odds[rownames(Odd_input[Odd_input[,cols_name]==0 & Odd_input[,bgc_name]==0,]),1]<-NA
+      res_list_odds[rownames(Odd_input[Odd_input[,cols_name]<= min_value,]),1]<-NA
+      colnames(res_list_odds)<-paste0(cols_name,"_",bgc_name,"_","odds")
+      #odds_col_name <-paste0(cols_name,"_",bgc_name,"_","odds")
+      #f <- fisher.test(as.table(mat), alt="two.sided")
+      SSA_matrix_merge<-cbind(SSA_matrix_merge,res_list_odds)
+      SSA_matrix_merge<-cbind(SSA_matrix_merge,res_list_p)
+      ######rm both 0 value####################################
+      
+      
+    }
+  }
+  return(SSA_matrix_merge)
+}
 
 
 
