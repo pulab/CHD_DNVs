@@ -1,0 +1,257 @@
+---
+title: "Mutagenesis MPRA library analysis"
+Author: Xiaoran Zhang
+Email: xiaoranzhang@childrens.harvard.edu
+output:
+  html_document:
+    df_print: paged
+Corresponding email: william.pu@enders.tch.harvard.edu
+Corresponding author: William T. Pu
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+## library all the packages
+```{r}
+library(ggplot2)
+library(DESeq2)
+library(Rfast)
+library(dplyr)
+library(reshape2)
+library(fitdistrplus)
+#library(sensitivity)
+library(compositions)
+library(stats)
+library(scrime)
+library(corrplot)
+library(pheatmap)
+library(fdrtool)
+library(coin)
+library(patchwork)
+library(ggpubr)
+library(cowplot)
+library(grid)
+library(stringr)
+library(dplyr)
+source(file = "./MPRA_analyzer.R") 
+```
+## import input files
+```{r}
+data<-read.table(file="../data/Mutagenesis_raw_data_with_group.txt",header=T,row.names=1)
+head(data)
+```
+
+##make a S4 class 
+```{r}
+RNA=data[,c(5:8)]
+DNA=data[,c(1:4)]
+annot=data[,c(9:13)] %>% as.data.frame()
+#rownames(annot)<-rownames(DNA)
+#colnames(annot)<-c("groups","region_name","Coding")
+data_norm<-create_MPRA_class(RNA=RNA,DNA=DNA,annot=annot)
+```
+##Plot DNA counts distribution
+```{r}
+DNA_total <- as.data.frame(matrixStats::rowMins(as.matrix(data_norm@DNA)))
+colnames(DNA_total)<-"minDNA"
+dim(data_norm@DNA)
+
+#pdf("DNA_counts_distribution_CHD.pdf")
+ggplot(DNA_total, aes(x = minDNA))+ geom_histogram(binwidth = 5,color="skyblue")+theme_bw()+theme_classic()+
+  geom_vline(xintercept = 20,color="skyblue",size=0.4,linetype="dashed")+xlim(0,300)
+#dev.off()
+```
+## DEseq2 to got active enhancers
+```{r}
+#filter_norm_data <- filter_data(data_norm, dna_filter=0)
+filter_norm_data <-data_norm
+dim(filter_norm_data@DNA)
+
+filter_norm_data <-DEGseq2_active(filter_norm_data=data_norm)
+sum(filter_norm_data@res$Active)
+```
+##DNA counts distribution
+```{r}
+filter_norm_data_new <- filter_data(filter_norm_data, dna_filter=20)
+total_number <- length(DNA_total[,1])
+kept_number <- length(filter_norm_data_new@DNA[,1])
+keptratio <- kept_number/total_number
+DNA_counts <- data.frame(
+  label=c("total_number","kept_number","keptratio"),
+  value=c(as.character(total_number),as.character(kept_number),as.character(keptratio))
+)
+DNA_counts
+```
+## got RNA/DNA ratio
+```{r}
+filter_norm_data_new <-get_ratio(filter_norm_data_new)
+
+head(filter_norm_data_new@res)
+```
+##Size factor
+```{r}
+Negative_C <- t(dplyr::select(as.data.frame(t(filter_norm_data_new@now_value)), !contains("::")))
+Positive_C <- t(dplyr::select(as.data.frame(t(filter_norm_data_new@now_value)), contains("::F")))
+both_C <- rownames(rbind(Negative_C,Positive_C))
+filter_norm_data_nc<-MPRA_SizeFactors(filter_norm_data_new@now_value,both_C,c(1:4))
+filter_norm_data_nc <-MPRA_SizeFactors(filter_norm_data_new,both_C,c(1:4))
+#filter_norm_data_nc_normalize_exp <- as.data.frame(filter_norm_data_nc@res[,c(6:9)])
+filter_norm_data_nc_normalize_exp<-filter_norm_data_nc@now_value
+dim(filter_norm_data_nc_normalize_exp)
+```
+##PCC cor
+```{r}
+A_V_cor <- cor(filter_norm_data_nc_normalize_exp)
+p<-corrplot(A_V_cor, method  = "number",order = "alphabet")
+scatter_plot_cor(filter_norm_data_nc_normalize_exp)
+```
+
+######
+```{r}
+mean_log_ratio <- rowMeans(filter_norm_data_nc_normalize_exp)
+filter_norm_data_scaled <- cbind(filter_norm_data_nc_normalize_exp,mean_log_ratio)
+filter_norm_data_scaled<-as.data.frame(filter_norm_data_scaled)
+filter_norm_data_scaled$rank_value <- rank(-as.numeric(as.character(filter_norm_data_scaled$mean_log_ratio)))
+filter_norm_data_nc@res$mean_log_ratio <-mean_log_ratio
+filter_norm_data_nc@res$order <-filter_norm_data_scaled$rank_value
+filter_norm_data_scaled$group<-filter_norm_data_nc@annot[rownames(filter_norm_data_scaled),"group"]
+########add a Group factor to the annotation matrix
+```
+
+##Plot the enhancers activity and rank and group information.
+
+```{r}
+########Different activities
+filter_norm_data_scaled_grouped <- as.data.frame(filter_norm_data_scaled)
+
+#write.table(FPM_result,file="Mutagenesis_FPM.txt",sep="\t",quote = F)
+ggplot(filter_norm_data_scaled_grouped, aes(x = mean_log_ratio, color=group))+geom_density()+theme_bw()+theme_classic()
+#ggplot(filter_norm_data_scaled_grouped, aes(x = mean_log_ratio))+geom_density()+theme_bw()+theme_classic()
+##Negative control FDR 0.05
+#select_NC<-filter_norm_data_scaled_grouped[filter_norm_data_scaled_grouped$group=="Neg",]
+#FDR_0.95<-FDR_negative(select_NC,"mean_log_ratio")
+#filter_norm_data_nc@res$FDR_active<-0
+#filter_norm_data_nc@res[filter_norm_data_nc@res$mean_log_ratio>FDR_0.95,]$FDR_active <- 1
+group_data<-as.data.frame(filter_norm_data_nc@annot$group)
+names(group_data)<-"group"
+filter_norm_data_scaled_grouped <- cbind(filter_norm_data_nc@res[,c("mean_log_ratio","order","Active")],
+                                         group_data)
+filter_norm_data_scaled_grouped$rank_value <- rank(-as.numeric(as.character(filter_norm_data_scaled_grouped$mean_log_ratio)))
+filter_norm_data_scaled_grouped_test <-Enrich_score(filter_norm_data_scaled_grouped, "group", "mean_log_ratio", "order")
+
+dat_text <-filter_norm_data_scaled_grouped_test$dat_text
+filter_norm_data_for_plot <- filter_norm_data_scaled_grouped_test$datasets
+#pdf("Enrichscore_of_CHD_library.pdf")
+
+A<-ggplot(filter_norm_data_scaled_grouped,aes(x=order,y=mean_log_ratio,color=factor(Active)))+
+  geom_point(size=2)+
+  theme_bw()+
+  scale_color_manual(breaks = c("1", "0"), values=c("red", "gray"))+
+  theme_classic()
+
+B<-ggplot(filter_norm_data_scaled_grouped, aes(x = order, y = factor(group,levels=c("NegativeControl",
+                                                                                    "ALT","WT"))))+
+  
+  geom_bin2d(aes(alpha = ..density..), fill = "slategray",binwidth = c(5,1)) +
+  scale_fill_continuous(guide = "none")+
+  
+  theme_bw()
+
+p_E<- ggplot(filter_norm_data_for_plot, aes(order, final_ES,color=factor(score_group)))+geom_line()+theme_bw()+theme_classic()+
+  #facet_wrap(~score_group,scales = "free",nrow =8)+ 
+  theme(panel.grid.major.y = element_blank(),
+        panel.grid.minor.y = element_blank(),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank())+
+  scale_color_manual(breaks = c("Neg","Pos",
+                                "ALT","REF"), values=c("darkblue", "darkred","blue","red"))+
+  geom_hline(yintercept = 0,color="skyblue",size=0.4,linetype="dashed")+
+  geom_text(
+    data    = dat_text,
+    mapping = aes(x = -Inf, y = -Inf, label = label),
+    hjust   = -2,
+    vjust   = -0.25) 
+
+A/p_E/B
+```
+##This part is for differently enhancers bewteen REF and ALT
+
+```{r}
+
+table <- cbind(filter_norm_data_nc@res,filter_norm_data_nc@annot)
+table_RNA <- table %>% dplyr::select(contains("ratio_scaled"))
+table_active <- table %>% dplyr::select(contains("Active"))
+select_REF <- t(table_RNA) %>% as.data.frame() %>% dplyr::select(contains("_17")) %>% t()
+select_REF_active <- t(table_active) %>% as.data.frame() %>% dplyr::select(contains("_17")) %>% t()
+sum(as.data.frame(select_REF_active)$Active)
+dim(select_REF_active)
+i = 0
+WT_vs_KO <- NULL
+for (i in 0:16){
+  rownames_KO <- gsub("_17", paste0("_", i), rownames(select_REF))
+  for (j in 1:length(rownames_KO)){
+    if (rownames_KO[j] %in% rownames(table_RNA)){
+      KO_value <- as.numeric(as.character(table_RNA[rownames_KO[j],]))
+      WT_value <- as.numeric(as.character(table_RNA[rownames(select_REF)[j],]))
+      mean_KO_j <- mean(KO_value)
+      mean_WT_j <- mean(WT_value)
+      pvalue_KO_j <- t.test(KO_value, WT_value)
+      WT_vs_KO <- rbind(WT_vs_KO, c(rownames_KO[j], rownames(select_REF)[j], 
+                                    KO_value, WT_value,mean_KO_j,mean_WT_j , pvalue_KO_j$p.value))      
+    }
+  }
+}
+colnames(WT_vs_KO) <- c("KO","WT","KO_1","KO_2","KO_3","KO_4","WT_1","WT_2","WT_3","WT_4","mean_KO","mean_WT","pvalue")
+WT_vs_KO <- as.matrix(WT_vs_KO)
+pvalue <- as.numeric(as.character(WT_vs_KO[,"pvalue"]))
+qvalue <- pvalue * length(pvalue) /rank(pvalue)
+WT_vs_KO <- as.data.frame(WT_vs_KO)
+WT_vs_KO$qvalue <- as.numeric(as.character(qvalue))
+inter_join <-WT_vs_KO
+
+inter_join$active_WT <- filter_norm_data_nc@res[inter_join$WT,]$Active
+inter_join$active_KO <- filter_norm_data_nc@res[inter_join$KO,]$Active
+inter_join$fold <- as.numeric(as.character(inter_join$mean_KO))-as.numeric(as.character(inter_join$mean_WT))
+inter_join$qvalue_0_05 <- 0
+inter_join$qvalue_0_05[inter_join$qvalue < 0.05] <- 1
+inter_join$fold_1_5 <- 0
+inter_join$fold_1_5 [inter_join$fold <= -0.58] <- 1
+inter_join$fold_1_5 [inter_join$fold >= 0.58] <- 2
+inter_join$active <- 0
+
+inter_join$active[as.numeric(as.character(inter_join$active_WT))>0] <-1
+inter_join$active[as.numeric(as.character(inter_join$active_KO))>0] <-1
+inter_join$final_sig <-0
+inter_join$final_sig[inter_join$qvalue_0_05 >0 & inter_join$fold <= -0.58 & inter_join$active >0] <-1
+inter_join$final_sig[inter_join$qvalue_0_05 >0 & inter_join$fold >= 0.58 & inter_join$active >0] <-2
+inter_join$mean_KO <- as.numeric(as.character(inter_join$mean_KO))
+inter_join$mean_WT <- as.numeric(as.character(inter_join$mean_WT))
+#write.table(inter_join,file="Mutagenesis_diff_Enhancers.txt",sep="\t",quote = F)
+```
+##Plot scattor plot of different enhancers
+```{r}
+
+#pdf("Diff_enhancers_mutagenesis.pdf",width = 9,height = 7)
+ggplot(inter_join,aes(mean_WT, mean_KO,color=factor(final_sig,levels=c('0','1','2'))))+
+  geom_point()+theme_bw()+theme_classic()+geom_abline(slope = 1,color="black",size=0.2,linetype="dashed")+
+  geom_abline(slope = 1,intercept=0.58,color="black",size=0.2,linetype="dashed")+
+  geom_abline(slope=1,intercept=-0.58,color="black",size=0.2,linetype="dashed")+
+  scale_color_manual(breaks = c("0", "1", "2"), values=c("gray", "red", "blue"))+
+  #scale_alpha_manual(breaks = c("0", "1"), values=c(0.2, 1))+
+
+  xlim(-5,5)+ylim(-5,5)
+#dev.off()
+sum(inter_join$final_sig==1)
+sum(inter_join$final_sig==2)
+```
+```{r}
+
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Cmd+Option+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Cmd+Shift+K* to preview the HTML file). 
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+

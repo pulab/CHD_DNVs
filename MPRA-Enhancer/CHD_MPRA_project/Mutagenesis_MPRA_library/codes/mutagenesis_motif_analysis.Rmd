@@ -1,0 +1,285 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+### import libraries 
+```{r}
+library(BUSpaRse)
+library(tidyverse)
+library(tidymodels)
+#library(Seurat)
+library(scales)
+library(viridis)
+library(Matrix)
+library(rsample)
+library(dplyr)
+library(Rfast)
+library(pheatmap)
+library(ranger)
+library(reshape2)
+
+```
+#### import input files
+```{r}
+motif_data <- read.table(file="../data/mutagenesis_WT-ALT_fimo_all_value_with_motif_gene_fpkm1_new.txt",header = F)
+#motif_data <- read.table(file="mutagenesis_WT-ALT_fimo_all_value_with_motif_gene_expressed_2.txt",header = F)
+dim(motif_data)
+colnames(motif_data)<- c("motif_name","logPvalueWT","logPvalueALT","region","motif","Genes","gene_show")
+motif_data$change <- motif_data$logPvalueWT-motif_data$logPvalueALT
+motif_data$change_2 <-3
+motif_data[((motif_data$logPvalueWT>=3)| (motif_data$logPvalueALT>=3)),]$change_2 <-0
+motif_data[(motif_data$change>=2)& (motif_data$logPvalueWT>=3),]$change_2 <-1
+motif_data[(motif_data$change<=-2)& (motif_data$logPvalueALT>=3),]$change_2 <-2
+motif_data<-motif_data[motif_data$change_2 !=3,]
+motif_data$label=NA
+test_label<-motif_data[(motif_data$change>=2 |motif_data$change<=-2)& (motif_data$logPvalueWT>=3 |motif_data$logPvalueALT>=3),]
+motif_data[rownames(motif_data) %in% rownames(test_label),]$label<-test_label$gene_show
+```
+```{r}
+### read in the mutagenesis MPRA library result 
+list_file <- read.table(file = "../data/mutagenesis_fold_final_sig.txt",header = T,row.names = 1)
+head(list_file)
+list_merged_motif<-merge(motif_data,list_file,by.y="row.names",by.x="region")
+```
+```{r}
+## splict IA DA and NC group
+motif_data_sig<-list_merged_motif
+for_heat_G<-motif_data_sig[(motif_data_sig$final_sig==2 &motif_data_sig$change_2 !=0),c("region","change","gene_show")]
+for_heat_G_M <- as.matrix(for_heat_G)
+melt_for_heat_G<-melt(for_heat_G[,c(1,3,2)])
+melt_for_heat_G_M <- acast(melt_for_heat_G[,c(1,2,4)],formula =gene_show~region, fill = 0 )
+rownames(for_heat_G_M) = for_heat_G$gene_show
+for_heat_L<-motif_data_sig[(motif_data_sig$final_sig==1 &motif_data_sig$change_2 !=0),c("region","change","gene_show")]
+for_heat_L_M <- as.matrix(for_heat_L)
+melt_for_heat_L<-melt(for_heat_L[,c(1,3,2)])
+melt_for_heat_L_M <- acast(melt_for_heat_L[,c(1,2,4)],formula =gene_show~region, fill = 0 )
+rownames(for_heat_L_M) = for_heat_L$gene_show
+
+for_heat_no<-motif_data_sig[(motif_data_sig$final_sig==0 & motif_data_sig$active==1 &motif_data_sig$change_2 !=0) ,c("region","change","gene_show")]
+for_heat_no_M <- as.matrix(for_heat_no)
+for_heat_no_M[,"change"]<-as.numeric(for_heat_no_M[,"change"])
+melt_for_heat_no<-melt(for_heat_no[,c(1,3,2)])
+melt_for_heat_no_M <- acast(melt_for_heat_no[,c(1,2,4)],formula =gene_show~region,fill = 0, value.var="value", fun.aggregate=max )
+rownames(for_heat_no_M) = for_heat_no$gene_show
+```
+
+#### Got the plot matrix
+```{r}
+
+plot_gt_ls <- data.frame(lost_motif = rowSums(melt_for_heat_G_M >=2), gain_motif = rowSums(melt_for_heat_G_M <=-2))
+plot_gt_ls <- as.matrix(plot_gt_ls)
+rownames(plot_gt_ls) <- rownames(melt_for_heat_G_M)
+pheatmap(plot_gt_ls, cluster_rows=T,cluster_cols=F, 
+         color = colorRampPalette(c("white","gold"))(100), show_colnames = T)
+
+plot_gt_ls2 <- data.frame(lost_motif = rowSums(melt_for_heat_L_M >=2), gain_motif = rowSums(melt_for_heat_L_M <=-2))
+#plot_gt_ls2 <- data.frame(lost_motif = rowSums(melt_for_heat_L_M >=4), gain_motif = rowMins(melt_for_heat_L_M <=-4))
+plot_gt_ls2 <- as.matrix(plot_gt_ls2)
+rownames(plot_gt_ls2) <- rownames(melt_for_heat_L_M)
+pheatmap(plot_gt_ls2, cluster_rows=T,cluster_cols=F, 
+         color = colorRampPalette(c( "white","gold"))(100), show_colnames = T)
+plot_gt_ls3 <- merge(plot_gt_ls,plot_gt_ls2,by=0,all=T)
+plot_gt_ls3[is.na(plot_gt_ls3)] <- 0
+rownames(plot_gt_ls3) = plot_gt_ls3[,1]
+plot_gt_ls3 = plot_gt_ls3[,2:length(plot_gt_ls3[1,])]
+pheatmap(as.matrix(plot_gt_ls3), cluster_rows=T,cluster_cols=F, 
+         color = colorRampPalette(c( "white","gold"))(100), show_colnames = T,fontsize = 8)
+
+
+plot_gt_ls5 <- data.frame(lost_motif = rowSums(melt_for_heat_no_M >=2), gain_motif = rowSums(melt_for_heat_no_M <= -2))
+#plot_gt_ls5 <- unique(as.matrix(plot_gt_ls5))
+rownames(plot_gt_ls5) <- rownames(melt_for_heat_no_M)
+pheatmap(plot_gt_ls5, cluster_rows=F,cluster_cols=F,color = colorRampPalette(c("white","gold"))(100), show_colnames = T)
+
+plot_gt_ls6 <- merge(plot_gt_ls3, plot_gt_ls5,by=0,all=T)
+plot_gt_ls6[is.na(plot_gt_ls6)] <- 0
+rownames(plot_gt_ls6) = plot_gt_ls6[,1]
+plot_gt_ls6 = plot_gt_ls6[,2:length(plot_gt_ls6[1,])]
+#write.table(plot_gt_ls6, "Mutagenesis_library_motif_changed_number.txt",sep="\t",quote = F)
+```
+
+##### Got odds ratio
+```{r}
+plot_gt_ls46<-plot_gt_ls6
+source("./MPRA_analyzer.R")
+plot_gt_ls46_lost<-Get_odds_ratio(plot_gt_ls46,c("lost_motif.x","lost_motif.y"),"lost_motif")
+plot_gt_ls46_lost<-Get_odds_ratio(plot_gt_ls46,c("lost_motif.x","lost_motif.y"),"lost_motif",1)
+#plot_gt_ls46_lost<-Get_odds_ratio(plot_gt_ls46,c("lost_motif.x","lost_motif.y"),"lost_motif")
+plot_gt_ls46_gain<-Get_odds_ratio(plot_gt_ls46,c("gain_motif.x","gain_motif.y"),"gain_motif",1)
+plot_gt_ls46_gain<-Get_odds_ratio(plot_gt_ls46,c("gain_motif.x","gain_motif.y"),"gain_motif")
+plot_gt_ls47<- cbind(plot_gt_ls46,plot_gt_ls46_gain)
+plot_gt_ls47<- cbind(plot_gt_ls47,plot_gt_ls46_lost)
+#head(plot_gt_ls47[is.na(plot_gt_ls47$gain_motif.x_gain_motif_odds),])
+Melt_plot_gt_ls47_G_G <-plot_gt_ls47[,c("gain_motif.x_gain_motif_odds","gain_motif.x_gain_motif_Pvalue")]
+Melt_plot_gt_ls47_G_G$type <-"GoF_enhancers_Gain_motif"
+colnames(Melt_plot_gt_ls47_G_G)<- c("Odds","Pvalue","type")
+Melt_plot_gt_ls47_G_G$motif <-rownames(Melt_plot_gt_ls47_G_G)
+Melt_plot_gt_ls47_G_L <-plot_gt_ls47[,c("lost_motif.x_lost_motif_odds","lost_motif.x_lost_motif_Pvalue")]
+Melt_plot_gt_ls47_G_L$type <-"GoF_enhancers_lost_motif"
+colnames(Melt_plot_gt_ls47_G_L)<- c("Odds","Pvalue","type")
+Melt_plot_gt_ls47_G_L$motif <-rownames(Melt_plot_gt_ls47_G_L)
+Melt_plot_gt_ls47_L_G <-plot_gt_ls47[,c("gain_motif.y_gain_motif_odds","gain_motif.y_gain_motif_Pvalue")]
+Melt_plot_gt_ls47_L_G$type <-"LoF_enhancers_Gain_motif"
+colnames(Melt_plot_gt_ls47_L_G)<- c("Odds","Pvalue","type")
+Melt_plot_gt_ls47_L_G$motif <-rownames(Melt_plot_gt_ls47_L_G)
+Melt_plot_gt_ls47_L_L <-plot_gt_ls47[,c("lost_motif.y_lost_motif_odds","lost_motif.y_lost_motif_Pvalue")]
+Melt_plot_gt_ls47_L_L$type <-"LoF_enhancers_lost_motif"
+colnames(Melt_plot_gt_ls47_L_L)<- c("Odds","Pvalue","type")
+Melt_plot_gt_ls47_L_L$motif <-rownames(Melt_plot_gt_ls47_L_L)
+for_plot_gt_ls47 <-rbind(Melt_plot_gt_ls47_G_G,Melt_plot_gt_ls47_G_L)
+for_plot_gt_ls47<-rbind(for_plot_gt_ls47,Melt_plot_gt_ls47_L_G)
+for_plot_gt_ls47<-rbind(for_plot_gt_ls47,Melt_plot_gt_ls47_L_L)
+
+for_plot_gt_ls47$order <- rank(for_plot_gt_ls47$Pvalue,na.last=TRUE, ties.method = "first")
+
+for_plot_gt_ls47[is.infinite(for_plot_gt_ls47$Odds),"Odds"]<-20
+motif_plot<-unique(for_plot_gt_ls47[for_plot_gt_ls47$order<=20,"motif"])
+
+
+for_plot<-acast(for_plot_gt_ls47[for_plot_gt_ls47$motif %in% motif_plot,c("motif","type","Odds")],formula =motif~type, fill = 0 )
+cols<-pheatmap(for_plot,cluster_cols = F)
+cols_sorted<-rownames(for_plot[cols$tree_row[["order"]],])
+
+```
+
+## 
+```{r}
+plot_gt_ls7 <-plot_gt_ls6
+dim(for_heat_G_M)
+dim(for_heat_L_M)
+dim(for_heat_no_M)
+
+plot_gt_ls7[,c(1:2)]<- plot_gt_ls7[,c(1:2)]/298
+plot_gt_ls7[,c(3:4)]<- plot_gt_ls7[,c(3:4)]/280
+plot_gt_ls7[,c(5:6)]<- plot_gt_ls7[,c(5:6)]/1383
+
+#pdf("Mutagenesis_library_full_list_normalized_to_total_number.pdf",width=10,height = 10)
+pheatmap(as.matrix(plot_gt_ls6), cluster_rows=T,cluster_cols=F, 
+         color = colorRampPalette(c( "white","gold"))(100), show_colnames = T,fontsize = 6)
+pheatmap(as.matrix(plot_gt_ls7), cluster_rows=T,cluster_cols=F, 
+         color = colorRampPalette(c( "white","gold"))(100), show_colnames = T,fontsize = 6,border_color = "Black")
+
+row_names<-pheatmap(as.matrix(plot_gt_ls7), cluster_rows=T,cluster_cols=F, 
+                    color = colorRampPalette(c( "white","gold"))(100), show_colnames = T,fontsize = 6,border_color = "Black")
+## Extract the right grob
+grob_classes <- purrr::map(row_names$gtable$grobs, class)
+idx_grob <- which(purrr::map_lgl(grob_classes, function(cl) 'gTree' %in% cl))[1]
+grob_names <- names(row_names$gtable$grobs[[idx_grob]]$children)
+idx_rect <- grob_names[grep('rect', grob_names)][1]
+
+## Remove borders around cells
+row_names$gtable$grobs[[idx_grob]]$children[[idx_rect]]$gp$col <- "black"
+row_names$gtable$grobs[[idx_grob]]$children[[idx_rect]]$gp$lwd <- 0.1
+
+## Plot result
+graphics::plot.new()
+print(row_names)
+
+#dev.off()
+```
+
+###figure2g
+```{r}
+plot_gt_ls57 <-plot_gt_ls7[rowMaxs(as.matrix(plot_gt_ls7[,c(1:4)]),value = T)>0.012,]
+#pdf("mutagenesis_library_full_list_normalized_to_total_number_0.015.pdf",width=10,height = 10)
+cols<-pheatmap(as.matrix(plot_gt_ls57), cluster_rows=T,cluster_cols=F, 
+               color = colorRampPalette(c( "white","gold","darkred"))(100), show_colnames = T,fontsize = 6,border_color = "Black")
+## Extract the right grob
+cols_sorted<-(rownames(plot_gt_ls57[cols$tree_row[["order"]],]))
+row_names<-pheatmap(as.matrix(plot_gt_ls57[cols_sorted,]), cluster_rows=F,cluster_cols=F, 
+                    color = colorRampPalette(c( "white","gold","darkred"))(100), show_colnames = T,fontsize = 6,border_color = "Black")
+
+grob_classes <- purrr::map(row_names$gtable$grobs, class)
+idx_grob <- which(purrr::map_lgl(grob_classes, function(cl) 'gTree' %in% cl))[1]
+grob_names <- names(row_names$gtable$grobs[[idx_grob]]$children)
+idx_rect <- grob_names[grep('rect', grob_names)][1]
+
+## Remove borders around cells
+row_names$gtable$grobs[[idx_grob]]$children[[idx_rect]]$gp$col <- "black"
+row_names$gtable$grobs[[idx_grob]]$children[[idx_rect]]$gp$lwd <- 0.1
+
+## Plot result
+graphics::plot.new()
+print(row_names)
+#dev.off()
+
+```
+
+###### figure2f
+```{r}
+motif_data <- read.table(file="../data/mutagenesis_WT-ALT_fimo_all_value_with_motif_gene_fpkm1_new.txt",header = F)
+
+dim(motif_data)
+colnames(motif_data)<- c("motif_name","logPvalueWT","logPvalueALT","region","motif","Genes","gene_show")
+motif_data$change <- motif_data$logPvalueWT-motif_data$logPvalueALT
+motif_data$change_2 <-3
+motif_data[((motif_data$logPvalueWT>=3)| (motif_data$logPvalueALT>=3)),]$change_2 <-0
+motif_data[(motif_data$change>=2)& (motif_data$logPvalueWT>=3),]$change_2 <-1
+motif_data[(motif_data$change<=-2)& (motif_data$logPvalueALT>=3),]$change_2 <-2
+motif_data$label=NA
+test_label<-motif_data[(motif_data$change>=2 |motif_data$change<=-2)& (motif_data$logPvalueWT>=3 |motif_data$logPvalueALT>=3),]
+motif_data[rownames(motif_data) %in% rownames(test_label),]$label<-test_label$gene_show
+
+list_merged_motif_full<-merge(motif_data,list_file,by.y="row.names",by.x="region")
+head(list_merged_motif_full)
+motif_data_sig<-list_merged_motif_full[list_merged_motif_full$final_sig !=0,]
+EMSA<-read.table(file="../data/mutagenesis_EMSA.txt")
+EMSA$fullname<-paste0(EMSA$V2,":::",EMSA$V1)
+motif_data_sig[(motif_data_sig$logPvalueWT<=3 & motif_data_sig$logPvalueALT<=3),]$gene_show<-NA
+labels<- read.table("../data/Label_motifs.txt",header = T)
+labels$full_name<-paste0(labels$motif_name,":::","motif_data_sig_new$region")
+
+motif_data_sig_new <- merge(motif_data_sig,labels,by="motif_name",all.x=T)
+motif_data_sig_new$full_name<-paste0(motif_data_sig_new$motif_name,":::",motif_data_sig_new$region)
+motif_data_sig_new$EMSA<-0
+motif_data_sig_new[motif_data_sig_new$full_name %in% EMSA$fullname,"EMSA"]<-1
+########################with odds##########################################
+motif_data_sig<-motif_data_sig_new
+motif_data_sig_L_G<-motif_data_sig[motif_data_sig$final_sig==1 & motif_data_sig$change_2==2,]
+motif_data_sig_L_L<-motif_data_sig[motif_data_sig$final_sig==1 & motif_data_sig$change_2==1,]
+motif_data_sig_G_L<-motif_data_sig[motif_data_sig$final_sig==2 & motif_data_sig$change_2==1,]
+motif_data_sig_G_G<-motif_data_sig[motif_data_sig$final_sig==2 & motif_data_sig$change_2==2,]
+#motif_data_sig_other <- motif_data_sig[(motif_data_sig$final_sig==2 |motif_data_sig$final_sig==1) & motif_data_sig$change_2==0,]
+motif_data_sig_other <- motif_data_sig[motif_data_sig$final_sig==0 | motif_data_sig$change_2==0 |  motif_data_sig$change_2==3,]
+motif_data_sig_other$odds <-0.5
+motif_data_sig_G_G$odds <- Melt_plot_gt_ls47_G_G[motif_data_sig_G_G$Genes,]$Odds
+motif_data_sig_L_L$odds <- Melt_plot_gt_ls47_L_L[motif_data_sig_L_L$Genes,]$Odds
+motif_data_sig_G_L$odds <- Melt_plot_gt_ls47_G_L[motif_data_sig_G_L$Genes,]$Odds
+motif_data_sig_L_G$odds <- Melt_plot_gt_ls47_L_G[motif_data_sig_L_G$Genes,]$Odds
+motif_data_sig_final <- rbind(motif_data_sig_G_G,motif_data_sig_L_L,motif_data_sig_L_G,motif_data_sig_G_L,motif_data_sig_other)
+motif_data_sig_final[motif_data_sig_final$change_2==3,"change_2"]<-0
+motif_data_sig_final[motif_data_sig_final$change_2==0,]$label_show <-NA
+#motif_data_sig_final[!is.na(motif_data_sig_final[motif_data_sig_final$change_2==0,"label_show"]),]$label_show <-NA
+motif_data_sig_final[!is.na(motif_data_sig_final[motif_data_sig_final$odds<1,"label_show"]),]$label_show <-NA
+motif_data_sig_final[is.infinite(motif_data_sig_final$odds),]$odds<-5
+#motif_data_sig_new[is.na(motif_data_sig_new$odds),"odds"]<-0
+motif_data_sig_final[is.na(motif_data_sig_final$odds),]$odds <-0.5
+motif_data_sig_final[motif_data_sig_final$odds>=5,"odds"]<-5
+motif_data_sig_final[motif_data_sig_final$EMSA==1,"change_2"]<-5
+#
+dim(motif_data_sig_final)
+pdf("fig2f_mutagenesis_all_sig_motif_changes_single_with_odd.pdf",width = 6,height = 6,useDingbats = F)
+ggplot(motif_data_sig_final,aes(x=logPvalueWT,y=logPvalueALT,color=factor(change_2),shape=factor(EMSA),label=label_show,size=odds))+geom_point()+
+  #scale_colour_gradient2(midpoint = 0,low="blue",mid = "gray",high = "red") +
+  scale_color_manual(breaks = c("0", "1", "2","5"), values=c("gray", "purple", "darkgreen","red"))+
+  scale_size(range = c(0.001,0.5))+
+  #scale_size_binned()+
+  #theme_bw()+
+  #geom_text(check_overlap = TRUE,hjust = 0, nudge_x = 0.05,size=3)+
+  geom_text_repel(aes(label=label_show,color=factor(change_2)),hjust=0, vjust=0,max.overlaps=50,size=2) +
+  geom_abline(slope = 1)+
+  xlim(0,10)+ylim(0,10)+facet_grid(rows = vars(final_sig),scales="free")+
+  theme(panel.background = element_rect(fill = "white", colour = "grey50"))
+dev.off()
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Cmd+Option+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Cmd+Shift+K* to preview the HTML file). 
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+
