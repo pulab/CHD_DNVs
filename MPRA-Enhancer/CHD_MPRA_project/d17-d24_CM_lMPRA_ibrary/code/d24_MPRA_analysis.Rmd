@@ -1,0 +1,284 @@
+---
+title: "d17_d24_MPRA_analysis"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+##load necessary packages and input data
+
+```{r}
+
+library(ggplot2)
+library(DESeq2)
+library(Rfast)
+library(dplyr)
+library(MPRAnalyze)
+library(reshape2)
+library(fitdistrplus)
+library(compositions)
+library(stats)
+library(scrime)
+library(corrplot)
+library(pheatmap)
+library(fdrtool)
+library(coin)
+library(patchwork)
+library(ggpubr)
+library(cowplot)
+library(grid)
+library(stringr)
+library(patchwork)
+source(file = "./MPRA_analyzer.R") 
+```
+## inputfiles ReadIN
+```{r}
+data<-read.table(file="../data/d24_readscount_data.txt",header=T,row.names = 1)
+#data<-read.table(file="../data/batch1-2_rawcounts_d24_with_merge.txt",header=T,row.names = 1)
+DNA <- data[,c(1:6)]
+RNA<-data[,c(7:12)]
+annote<-data[,c(13:15)]
+data_norm<-create_MPRA_class(RNA=RNA,DNA=DNA,annot=annote)
+
+```
+##Got DNA counts and distribution
+```{r}
+DNA_total <- as.data.frame(matrixStats::rowMins(as.matrix(data_norm@DNA)))
+colnames(DNA_total)<-"minDNA"
+dim(data_norm@DNA)
+
+#pdf("DNA_counts_distribution_CHD.pdf")
+ggplot(DNA_total, aes(x = minDNA))+ geom_histogram(binwidth = 5,color="skyblue")+theme_bw()+theme_classic()+
+  geom_vline(xintercept = 20,color="skyblue",size=0.4,linetype="dashed")+xlim(0,500)
+#dev.off()
+```
+###filter low covered regions and got the active genes by DEseq2
+```{r}
+filter_norm_data <- filter_data(data_norm, dna_filter=20)
+#filter_norm_data <-data_norm
+dim(filter_norm_data@DNA)
+
+filter_norm_data <-DEGseq2_active(filter_norm_data=filter_norm_data)
+sum(filter_norm_data@res$Active)
+
+total_number <- length(DNA_total[,1])
+kept_number <- length(filter_norm_data@DNA[,1])
+keptratio <- kept_number/total_number
+DNA_counts <- data.frame(
+  label=c("total_number","kept_number","keptratio"),
+  value=c(as.character(total_number),as.character(kept_number),as.character(keptratio))
+)
+DNA_counts
+```
+```{r}
+#MPRAannalyze
+library(MPRAnalyze)
+trans_to_MPRAnalyze<-function(data_norm,condition_DNA=NULL,batch_DNA=NULL,barcode_DNA=NULL,
+                              condition_RNA=NULL,batch_RNA=NULL,barcode_RNA=NULL, control=NULL,...)
+  {
+  nDNA<-length(data_norm@raw_DNA)
+  region<-dim(data_norm@raw_DNA)[1]
+  nRNA<-length(data_norm@raw_RNA)
+  controls<-c(rep(FALSE,region))
+  colAnnot <- data.frame(batch=c(rep(1,nDNA)),
+                         condition=c(rep("samples",nDNA)),
+                         barcode=c(rep(1,nDNA))
+                          )
+  colAnnot2 <- data.frame(batch=c(rep(1,nRNA)),
+                         condition=c(rep("samples",nRNA)),
+                         barcode=c(rep(1,nRNA))
+                          )
+  rownames(colAnnot)<-colnames(data_norm@raw_DNA)
+  rownames(colAnnot2)<-colnames(data_norm@raw_RNA)
+
+  if (!is.null (condition_DNA)){
+    colAnnot$condition<-condition_DNA
+  }
+  if (!is.null (batch_DNA)){
+    colAnnot$batch<-batch_DNA
+    }
+  if (!is.null (barcode_DNA)){
+    colAnnot$barcode<-barcode_DNA
+  }
+  if (!is.null (condition_RNA)){
+    colAnnot2$condition<-condition_RNA
+  }
+  if (!is.null (batch_RNA)){
+    colAnnot2$batch<-batch_RNA
+    }
+  if (!is.null (barcode_RNA)){
+    colAnnot2$barcode<-barcode_RNA
+    }
+  if (!is.null (control)){
+    controls<-control
+  }
+  obj <- MpraObject(dnaCounts = as.matrix(data_norm@raw_DNA), rnaCounts = as.matrix(data_norm@raw_RNA), 
+                  dnaAnnot = colAnnot, rnaAnnot = colAnnot2, 
+                  controls = controls,...)
+  return(obj)
+}
+
+control_num<-annote$group2
+control_num <- ifelse(control_num == "HHE_ATAC+", FALSE, TRUE)
+obj<-trans_to_MPRAnalyze(data_norm,control = control_num)
+
+obj <- estimateDepthFactors(obj, lib.factor = c("batch", "condition"),
+                            which.lib = "dna", 
+                            depth.estimator = "uq")
+obj <- estimateDepthFactors(obj, lib.factor = c("condition"),
+                            which.lib = "rna", 
+                            depth.estimator = "uq")
+obj <- estimateDepthFactors(obj)
+obj <- analyzeQuantification(obj = obj)
+alpha <- getAlpha(obj)
+boxplot(alpha)
+res.epi <- testEmpirical(obj = obj,statistic<-alpha$alpha,useControls=T)
+summary(res.epi)
+
+
+obj <- MpraObject(dnaCounts = ce.dnaCounts, rnaCounts = ce.rnaCounts, 
+                  dnaAnnot = ce.colAnnot, rnaAnnot = ce.colAnnot, 
+                  controls = ce.control)
+par(mfrow=c(2,2))
+hist(res.epi$pval.mad, main="d24")
+hist(res.epi$pval.mad[ce.control], main="d24, Negcontrols")
+MPRA_A_result<-cbind(alpha,res.epi)
+
+```
+
+```{r}
+both_C <- rownames(filter_norm_data_new@DNA)
+filter_norm_data_nc <-MPRA_SizeFactors(filter_norm_data_new,both_C,c(1:6))
+#filter_norm_data_nc_normalize_exp <- as.data.frame(filter_norm_data_nc@res[,c(6:9)])
+filter_norm_data_nc_normalize_exp<-filter_norm_data_nc@now_value
+dim(filter_norm_data_nc_normalize_exp)
+
+```
+
+```{r}
+A_V_cor <- cor(filter_norm_data_nc_normalize_exp)
+p<-corrplot(A_V_cor, method  = "number",order = "alphabet")
+scatter_plot_cor(filter_norm_data_nc_normalize_exp)
+```
+
+```{r}
+mean_log_ratio <- rowMeans(filter_norm_data_nc_normalize_exp)
+filter_norm_data_scaled <- cbind(filter_norm_data_nc_normalize_exp,mean_log_ratio)
+filter_norm_data_scaled<-as.data.frame(filter_norm_data_scaled)
+filter_norm_data_scaled$rank_value <- rank(-as.numeric(as.character(filter_norm_data_scaled$mean_log_ratio)))
+filter_norm_data_nc@res$mean_log_ratio <-mean_log_ratio
+filter_norm_data_nc@res$order <-filter_norm_data_scaled$rank_value
+filter_norm_data_scaled$group<-filter_norm_data_nc@annot[rownames(filter_norm_data_scaled),"group"]
+```
+
+Plot the enhancers activity and rank and group information.
+
+```{r}
+########Different activities
+filter_norm_data_scaled_grouped <- as.data.frame(filter_norm_data_scaled)
+ggplot(filter_norm_data_scaled_grouped, aes(x = mean_log_ratio, color=group))+geom_density()+theme_bw()+theme_classic()
+#ggplot(filter_norm_data_scaled_grouped, aes(x = mean_log_ratio))+geom_density()+theme_bw()+theme_classic()
+##Negative control FDR 0.05
+#select_NC<-filter_norm_data_scaled_grouped[filter_norm_data_scaled_grouped$group=="Neg",]
+#FDR_0.95<-FDR_negative(select_NC,"mean_log_ratio")
+#filter_norm_data_nc@res$FDR_active<-0
+#filter_norm_data_nc@res[filter_norm_data_nc@res$mean_log_ratio>FDR_0.95,]$FDR_active <- 1
+group_data<-as.data.frame(filter_norm_data_nc@annot$group2)
+names(group_data)<-"group"
+filter_norm_data_scaled_grouped <- cbind(filter_norm_data_nc@res[,c("mean_log_ratio","order","Active")],
+                                         group_data)
+filter_norm_data_scaled_grouped$rank_value <- rank(-as.numeric(as.character(filter_norm_data_scaled_grouped$mean_log_ratio)))
+filter_norm_data_scaled_grouped_test <-Enrich_score(filter_norm_data_scaled_grouped, "group", "mean_log_ratio", "order")
+
+dat_text <-filter_norm_data_scaled_grouped_test$dat_text
+filter_norm_data_for_plot <- filter_norm_data_scaled_grouped_test$datasets
+#pdf("Enrichscore_of_CHD_library.pdf")
+
+A<-ggplot(filter_norm_data_scaled_grouped,aes(x=order,y=mean_log_ratio,color=factor(Active)))+
+  geom_point(size=2)+
+  theme_bw()+
+  scale_color_manual(breaks = c("1", "0"), values=c("red", "gray"))+
+  theme_classic()
+
+B<-ggplot(filter_norm_data_scaled_grouped, aes(x = order, y = factor(group,levels=c("Neg",
+                                                                                    "HHE_ATAC+"))))+
+  
+  geom_bin2d(aes(alpha = ..density..), fill = "slategray",binwidth = c(5,1)) +
+  scale_fill_continuous(guide = "none")+
+  
+  theme_bw()
+
+p_E<- ggplot(filter_norm_data_for_plot, aes(order, final_ES,color=factor(score_group)))+geom_line()+theme_bw()+theme_classic()+
+  #facet_wrap(~score_group,scales = "free",nrow =8)+ 
+  theme(panel.grid.major.y = element_blank(),
+        panel.grid.minor.y = element_blank(),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank())+
+  scale_color_manual(breaks = c("Neg", "HHE_ATAC+"), values=c("darkblue", "darkred"))+
+  geom_hline(yintercept = 0,color="skyblue",size=0.4,linetype="dashed")+
+  geom_text(
+    data    = dat_text,
+    mapping = aes(x = -Inf, y = -Inf, label = label),
+    hjust   = -2,
+    vjust   = -0.25) 
+
+A/p_E/B
+```
+```{r}
+head(filter_norm_data_scaled_grouped)
+filter_norm_data_scaled_grouped$avalue<-0
+filter_norm_data_scaled_grouped_new <- merge(filter_norm_data_scaled_grouped,
+                                             MPRA_A_result, by=0, all.x=T)
+rownames(filter_norm_data_scaled_grouped_new)<-filter_norm_data_scaled_grouped_new$Row.names
+filter_norm_data_scaled_grouped_new<-as.data.frame(filter_norm_data_scaled_grouped_new)
+filter_norm_data_scaled_grouped_new$A_Active<-0
+filter_norm_data_scaled_grouped_new[filter_norm_data_scaled_grouped_new$pval.mad<0.05 &
+                                      !is.na(filter_norm_data_scaled_grouped_new$pval.mad),]$A_Active<-1
+filter_norm_data_scaled_grouped_new$Merge_active<-paste0(filter_norm_data_scaled_grouped_new$Active,"-",filter_norm_data_scaled_grouped_new$A_Active)
+ggplot(filter_norm_data_scaled_grouped_new,aes(mean_log_ratio, alpha,color=factor(Merge_active)))+
+  geom_point()+theme_bw()+theme_classic()+geom_abline(slope = 1,color="black",size=0.2,linetype="dashed")+ xlim(-4,4)+ylim(-2,4)
+lists<-c("chr3:82149507-82149907",
+"chr12:33136295-33136695",
+"chr9:137494462-137494862",
+"chr16:51046302-51046702",
+"chr20:49157407-49157807",
+"chr7:93870775-93871175",
+"chr15:96808175-96808575",
+"chr9:101837589-101837989",
+"chr1:120557155-120557555",
+"chr4:77586893-77587293",
+"chr6:15036948-15037348",
+"chr10:112444998-112445398",
+"chr5:88609588-88609988",
+"chr12:33013177-33013577",
+"chr20:10767281-10767681",
+"chr2:5906817-5907217",
+"chr6:15409469-15409869",
+"chr20:10699331-10699731",
+"chr10:112477558-112477958",
+"chr12:33034576-33034976",
+"chr2:69081145-69081545",
+"chr10:112389543-112389943",
+"chr6:15421129-15421529",
+"chr20:10539348-10539748")
+filter_norm_data_scaled_grouped_new_2<-filter_norm_data_scaled_grouped_new[lists,]
+filter_norm_data_scaled_grouped_new_2$Active_GFP<-filter_norm_data_scaled_grouped_new_2$Active
+filter_norm_data_scaled_grouped_new_2["chr20:10699331-10699731",]$Active_GFP<-1
+filter_norm_data_scaled_grouped_new_2["chr6:15409469-15409869",]$Active_GFP<-0
+filter_norm_data_scaled_grouped_new_2$Active_4<-paste0(filter_norm_data_scaled_grouped_new_2$Merge_active,"-",
+                                                       filter_norm_data_scaled_grouped_new_2$Active_GFP
+                                                       )
+ggplot(filter_norm_data_scaled_grouped_new_2,aes(mean_log_ratio, alpha,color=factor(Active_4)))+
+  geom_point()+theme_bw()+theme_classic()+geom_abline(slope = 1,color="black",size=0.2,linetype="dashed")+ xlim(-4,4)+ylim(-2,4)
+
+```
+
+
+
+
+
+
+
+
+
