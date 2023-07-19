@@ -14,6 +14,11 @@ packages: DESeq2,GenomicRanges,BiocGenerics,dplyr,purrr etc.
 
 ## A schematic overview of MPRA libraries
 ----------------------------------------------------------------------
+### Mutagenesis MPRA Library
+The MPRA library analysis for a systematic tiling mutagenesis library.
+Mutagenesis_MPRA_library/codes/Mutagenesis_MPRA_analysis.Rmd
+
+<img width="372" alt="image" src="https://github.com/pulab/CHD_DNVs/assets/66787411/a4f14c1a-198b-4da8-b668-76bfe877aaaa">
 
 
 ### Inputfiles
