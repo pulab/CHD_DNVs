@@ -1,6 +1,7 @@
 library(DESeq2)
 library(GenomicRanges)
 library(BiocGenerics)
+library(MASS)
 create_MPRA_class <- function(RNA, DNA, annot = NULL,  norm = TRUE) {
   # check if RNA and DNA have the same number of rows
   stopifnot(nrow(RNA) == nrow(DNA))
@@ -21,15 +22,9 @@ create_MPRA_class <- function(RNA, DNA, annot = NULL,  norm = TRUE) {
   }
   # normalize RNA and DNA to FPKM if norm is TRUE
   if (norm) {
-    # rna_fpkms <- (t(round(t(RNA)/colSums(RNA)*1000000,digits = 7)))
-    # dna_fpkms <- (t(round(t(DNA)/colSums(DNA)*1000000,digits = 7)))
-    rna_fpkms_temp <- t(t(RNA)/colSums(RNA)*1000000) %>% as.data.frame() %>% round(digits = 7) %>% format(nsmall = 7)
-    rna_fpkms <- mutate_all(rna_fpkms_temp, function(x) as.numeric(as.character(x)))
-    dna_fpkms_temp <- t(t(DNA)/colSums(DNA)*1000000) %>% as.data.frame() %>% round(digits = 7) %>% format(nsmall = 7)
-    dna_fpkms <- mutate_all(dna_fpkms_temp, function(x) as.numeric(as.character(x)))
     
-    #rna_fpkms <- as.data.frame(t(round(t(RNA)/colSums(RNA)*1000000,digits = 7)))
-    #dna_fpkms <- as.data.frame(t(round(t(DNA)/colSums(DNA)*1000000,digits = 7)))
+    rna_fpkms <- as.data.frame(t(t(RNA)/colSums(RNA)*1000000))
+    dna_fpkms <- as.data.frame(t(t(DNA)/colSums(DNA)*1000000))
   } else {
     rna_fpkms <- RNA
     dna_fpkms <- DNA
@@ -237,20 +232,25 @@ FDR_negative <- function(Negative_C,colname,distribution="norm",fdr_value=0.05){
 }
 library(jmuOutlier) 
 #library(distr6)
-Enrich_score <- function(datasets, groups_col , value_col , order_col){
+Enrich_score <- function(datasets, groups_col , value_col , order_col,random=1000){
+  #set.seed(11)
   ALL <- datasets[,value_col]
   Max <- length(ALL)
   datasets$Enrich_score <-0
   datasets$group_order <-0
   pvalue <- c()
+  final_ES_merged <-c()
+  #random_final_E <- data.frame()
+  #random_final_E <- data.frame(matrix(nrow = random, ncol = 0))
   groups_names <-c()
   rows_number <-length(unique(datasets[,groups_col]))
   datasets2 <- datasets[FALSE,]
   datasets3 <- datasets
+  all_random_ES <- data.frame(matrix(nrow = random, ncol = 0))
   for (cols_name in unique(datasets[,groups_col])) {
     datasets3 <- datasets
     PC1 <- datasets3[datasets3[,groups_col]==cols_name,]
-    p_PC1 <- perm.test(PC1[,value_col],ALL)$p.value
+    #p_PC1 <- perm.test(PC1[,value_col],ALL)$p.value
     PC1$group_order <-0
     PC1$group_order <- rank(-as.numeric(as.character(PC1[,value_col])),ties.method = "first")
     Max_order <- max(PC1[,"group_order"])
@@ -275,24 +275,47 @@ Enrich_score <- function(datasets, groups_col , value_col , order_col){
     }
     Max <- length(datasets3[,order_col])
     datasets3$Enrich_score <- datasets3[,"group_order"]/Max_pc1 - datasets3[,order_col]/Max
-    #mean_value_p <- mean(datasets3$Enrich_score[datasets3$Enrich_score >=0])
-    #mean_value_n <- mean(datasets3$Enrich_score[datasets3$Enrich_score <0])
-    #datasets3$NES[datasets3$Enrich_score >=0] <- 
-    #  datasets3$Enrich_score[datasets3$Enrich_score >=0]/mean_value_p
-    #datasets3$NES[datasets3$Enrich_score <0] <- 
-    #  datasets3$Enrich_score[datasets3$Enrich_score <0]/mean_value_n
-    datasets3$negative_Enrich_score <- (Max_pc1-datasets3[,"group_order"]+1)/Max_pc1 - (Max-datasets3[,order_col]+1)/Max
-    #mean_value_negative_p <- mean(datasets3$negative_Enrich_score[datasets3$negative_Enrich_score >=0])
-    #mean_value_negative_n <- mean(datasets3$negative_Enrich_score[datasets3$negative_Enrich_score <0])
-    #datasets3$negative_NES[datasets3$negative_Enrich_score >=0] <-
-    #  -1*datasets3$negative_Enrich_score[datasets3$negative_Enrich_score >=0]/mean_value_negative_p
-    #datasets3$negative_NES[datasets3$negative_Enrich_score <0] <-
-    #  datasets3$negative_Enrich_score[datasets3$negative_Enrich_score <0]/mean_value_negative_n
-    pvalue <- c(pvalue, p_PC1)
+    random_final_E <-c()
+    for (num in c(1:random)){
+      #random_set<-datasets3
+      selected_regions <- sort(sample(datasets3[,order_col], size = Max_pc1, replace = FALSE))
+      selected_E<-as.data.frame(selected_regions)
+      colnames(selected_E)<-"order_col"
+      selected_E$group_order <-0
+      selected_E$group_order <- rank(as.numeric(as.character(selected_E[,"order_col"])),ties.method = "first")
+      Max_order_r<-max(selected_E[,"group_order"])
+      Max_pc1_r <- length(selected_E[,"order_col"])
+
+      selected_E$Enrich_score <- selected_E[,"group_order"]/Max_pc1_r - selected_E[,"order_col"]/Max
+      random_final_E_num<-mean(selected_E$Enrich_score)
+      #random_final_E_num<-sum(selected_E$Enrich_score)
+      #random_final_E_num<- selected_E$Enrich_score[which.max(abs(selected_E$Enrich_score))]
+      random_final_E <- c(random_final_E,random_final_E_num)
+    }
+    plotPdata<-as.data.frame(random_final_E)
+    #ggplot(plotPdata, aes(random_final_E))+geom_histogram(bins = 0.05)+
+    #  geom_vline(xintercept = final_ES)
+    #  theme_classic()
+    all_random_ES[,cols_name]<-random_final_E
+    
     groups_names <- c(groups_names,cols_name)
     datasets3$score_group <- cols_name
     #datasets3$final_ES <- datasets3$Enrich_score - datasets3$negative_Enrich_score
-    datasets3$final_ES <- datasets3$Enrich_score 
+    datasets3$final_ES <- (datasets3$Enrich_score) 
+    final_ES <-mean(datasets3[datasets3[,groups_col]==cols_name,]$Enrich_score)
+    
+    if (final_ES <0 ){
+      p_test <- (sum(final_ES >= random_final_E))/random
+    }
+    if (final_ES >=0 ){
+      p_test <- (sum(final_ES <= random_final_E))/random
+    }
+    
+    p_PC1 <- p_test
+    pvalue <- c(pvalue, p_PC1)
+    final_ES_merged<-c(final_ES_merged,final_ES)
+
+    
     #if (max(abs(datasets3$negative_Enrich_score)) > max(abs(datasets3$Enrich_score))){
     #  datasets3$final_ES <-
     #  datasets3$negative_NES
@@ -305,12 +328,14 @@ Enrich_score <- function(datasets, groups_col , value_col , order_col){
   }  
   dat_text <- data.frame(
     label = pvalue,
-    score_group = groups_names
+    score_group = groups_names,
+    final_ES =final_ES_merged
   )
   
-  newlist <-list("dat_text"=dat_text, "datasets"=datasets2)
+  newlist <-list("dat_text"=dat_text, "datasets"=datasets2,"random_ES"=all_random_ES)
   return(newlist)
 }
+
 Diff_enhancers<- function(data,conditon_1,conditon_2){
   pvalue <- c()
   for (i in 1:dim(data[,conditon_1])[1]) {
