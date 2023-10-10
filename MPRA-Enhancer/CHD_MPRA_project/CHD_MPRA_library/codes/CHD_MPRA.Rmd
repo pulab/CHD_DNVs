@@ -39,9 +39,9 @@ source(file = "./MPRA_analyzer.R")
 
 ```{r}
 #inputfile<-"../data/CHD_MPRA_raw_counts_DNA1-4_RNA1-4.txt"
-inputfile<-"../data/CHD_MPRA_raw_counts_DNA1-4_RNA1-4_group_add_coding.txt"
+inputfile<-"../data/CHD_MPRA_raw_counts_DNA1-4_RNA1-4_group_add_coding_new.txt"
 data<-read.table(file=inputfile,header=T,row.names = 1)
-head(data)
+
 ```
 
 ```{r}
@@ -130,12 +130,13 @@ filter_norm_data_scaled$group<-filter_norm_data_nc@annot[rownames(filter_norm_da
 
 ```{r}
 ########Different activities
+set.seed(11)
 filter_norm_data_scaled_grouped <- as.data.frame(filter_norm_data_scaled)
 #FPM_result<-cbind(filter_norm_data_nc@now_value,filter_norm_data_scaled_grouped)
-FPM_result<-cbind(filter_norm_data_nc@DNA, filter_norm_data_nc@RNA,filter_norm_data_nc@now_value,filter_norm_data_scaled_grouped,
+FPM_result<-cbind(filter_norm_data_nc@DNA, filter_norm_data_nc@RNA,filter_norm_data_scaled_grouped,filter_norm_data_nc@res[,1],
                   filter_norm_data_nc@annot)
 FPM_result<-FPM_result[FPM_result$Coding !=TRUE,]
-write.table(FPM_result,file="CHD_FPM.txt",sep="\t",quote = F)
+#write.table(FPM_result,file="CHD_FPM.txt",sep="\t",quote = F)
 ggplot(filter_norm_data_scaled_grouped, aes(x = mean_log_ratio, color=group))+geom_density()+theme_bw()+theme_classic()
 #ggplot(filter_norm_data_scaled_grouped, aes(x = mean_log_ratio))+geom_density()+theme_bw()+theme_classic()
 ##Negative control FDR 0.05
@@ -148,19 +149,26 @@ names(group_data)<-"group"
 filter_norm_data_scaled_grouped <- cbind(filter_norm_data_nc@res[,c("mean_log_ratio","order","Active")],
                                          group_data)
 filter_norm_data_scaled_grouped$rank_value <- rank(-as.numeric(as.character(filter_norm_data_scaled_grouped$mean_log_ratio)))
-filter_norm_data_scaled_grouped_test <-Enrich_score(filter_norm_data_scaled_grouped, "group", "mean_log_ratio", "order")
+
+
+filter_norm_data_scaled_grouped_test <-Enrich_score(filter_norm_data_scaled_grouped, "group", "mean_log_ratio", "order",random = 2000)
 
 dat_text <-filter_norm_data_scaled_grouped_test$dat_text
-filter_norm_data_for_plot <- filter_norm_data_scaled_grouped_test$datasets
-#pdf("Enrichscore_of_CHD_library.pdf")
+random_final_E <-as.data.frame(filter_norm_data_scaled_grouped_test$random_ES)
+ggplot(random_final_E, aes(Neg))+geom_histogram(binwidth = 0.001)+
+      geom_vline(xintercept = dat_text$final_ES[3])+
+      theme_classic()
 
+filter_norm_data_for_plot <- filter_norm_data_scaled_grouped_test$datasets
+
+#filter_norm_data_for_plot[filter_norm_data_for_plot$group=="Controls","group"] <- NA
 A<-ggplot(filter_norm_data_scaled_grouped,aes(x=order,y=mean_log_ratio,color=factor(Active)))+
   geom_point(size=2)+
   theme_bw()+
   scale_color_manual(breaks = c("1", "0"), values=c("red", "gray"))+
   theme_classic()
 
-B<-ggplot(filter_norm_data_scaled_grouped, aes(x = order, y = factor(group,levels=c("Neg","Pos",
+B<-ggplot(filter_norm_data_scaled_grouped[filter_norm_data_scaled_grouped$group != "Controls",], aes(x = order, y = factor(group,levels=c("Neg","Pos",
                                                                                     "ALT","REF"))))+
   
   geom_bin2d(aes(alpha = ..density..), fill = "slategray",binwidth = c(5,1)) +
@@ -168,22 +176,24 @@ B<-ggplot(filter_norm_data_scaled_grouped, aes(x = order, y = factor(group,level
   
   theme_bw()
 
-p_E<- ggplot(filter_norm_data_for_plot, aes(order, final_ES,color=factor(score_group)))+geom_line()+theme_bw()+theme_classic()+
+p_E<- ggplot(filter_norm_data_for_plot[filter_norm_data_for_plot$group != "Controls",], aes(order, final_ES,color=factor(score_group)))+geom_line()+theme_bw()+theme_classic()+
   #facet_wrap(~score_group,scales = "free",nrow =8)+ 
   theme(panel.grid.major.y = element_blank(),
         panel.grid.minor.y = element_blank(),
         panel.grid.major.x = element_blank(),
         panel.grid.minor.x = element_blank())+
   scale_color_manual(breaks = c("Neg","Pos",
-                                "ALT","REF"), values=c("darkblue", "darkred","blue","red"))+
+                                "ALT","REF"), values=c("darkblue", "darkred","blue","red","Yellow"))+
   geom_hline(yintercept = 0,color="skyblue",size=0.4,linetype="dashed")+
   geom_text(
     data    = dat_text,
     mapping = aes(x = -Inf, y = -Inf, label = label),
     hjust   = -2,
     vjust   = -0.25) 
-
+#pdf("Enrichscore_of_CHD_library.pdf")
 A/p_E/B
+#dev.off()
+dat_text
 ```
 
 ##This part is for differently enhancers bewteen REF and ALT
@@ -209,8 +219,8 @@ inter_join$final_sig[inter_join$qvalue_0_05 >0 &  inter_join$fold >= 0.58 & inte
 inter_join$final_sig[inter_join$qvalue_0_05 >0 & inter_join$fold <= -0.58 & inter_join$active >0] <-1
 head(inter_join)
 inter_join_filter <-inter_join[inter_join$Coding_ALT==FALSE,]
-write.table(inter_join_filter,file="CHD_diff_Enhancers.txt",sep="\t",quote = F)
-pdf("Diff_enhancers_CHD.pdf",width = 9.5,height = 7)
+#write.table(inter_join_filter,file="CHD_diff_Enhancers.txt",sep="\t",quote = F)
+#pdf("Diff_enhancers_CHD.pdf",width = 9.5,height = 7)
 ggplot(inter_join_filter,aes(REF, ALT,color=factor(final_sig,levels=c('0','1','2')), alpha =factor(qvalue_0_05,levels=c("0","1"))))+
   geom_point()+theme_bw()+theme_classic()+geom_abline(slope = 1,color="black",size=0.2,linetype="dashed")+
   geom_abline(slope = 1, intercept = 0.58,color="black",size=0.2,linetype="dashed")+
@@ -219,7 +229,7 @@ ggplot(inter_join_filter,aes(REF, ALT,color=factor(final_sig,levels=c('0','1','2
   scale_alpha_manual(breaks = c("0", "1"), values=c(0.2, 1))+
   xlim(-4,4)+ylim(-4,4)
 
-dev.off()
+#dev.off()
 ```
 
 ```{r}
@@ -262,4 +272,8 @@ one.way <- aov(value ~ group, data = sub4_for_plot)
 tukey.one.way<-TukeyHSD(one.way)
 p_values <- tukey.one.way$group[, "p adj"]
 tukey.one.way
+```
+## session Info
+```{r}
+sessionInfo()
 ```
