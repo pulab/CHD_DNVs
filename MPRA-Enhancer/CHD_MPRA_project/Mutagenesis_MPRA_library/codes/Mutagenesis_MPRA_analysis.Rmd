@@ -94,11 +94,15 @@ head(filter_norm_data_new@res)
 Negative_C <- t(dplyr::select(as.data.frame(t(filter_norm_data_new@now_value)), !contains("::")))
 Positive_C <- t(dplyr::select(as.data.frame(t(filter_norm_data_new@now_value)), contains("::F")))
 both_C <- rownames(rbind(Negative_C,Positive_C))
-filter_norm_data_nc<-MPRA_SizeFactors(filter_norm_data_new@now_value,both_C,c(1:4))
+#filter_norm_data_nc<-MPRA_SizeFactors(filter_norm_data_new@now_value,both_C,c(1:4))
 filter_norm_data_nc <-MPRA_SizeFactors(filter_norm_data_new,both_C,c(1:4))
 #filter_norm_data_nc_normalize_exp <- as.data.frame(filter_norm_data_nc@res[,c(6:9)])
 filter_norm_data_nc_normalize_exp<-filter_norm_data_nc@now_value
 dim(filter_norm_data_nc_normalize_exp)
+# lists<-read.table("../data/mutagenes_Library.list")
+# lists$active<-filter_norm_data_new@res[lists$V1,]$Active
+# lists[is.na(lists$active),"active"]<-0
+# write.table(lists,"../data/mutagenes_Library.list")
 ```
 ##PCC cor
 ```{r}
@@ -123,6 +127,7 @@ filter_norm_data_scaled$group<-filter_norm_data_nc@annot[rownames(filter_norm_da
 
 ```{r}
 ########Different activities
+set.seed(11)
 filter_norm_data_scaled_grouped <- as.data.frame(filter_norm_data_scaled)
 
 #write.table(FPM_result,file="Mutagenesis_FPM.txt",sep="\t",quote = F)
@@ -138,11 +143,15 @@ names(group_data)<-"group"
 filter_norm_data_scaled_grouped <- cbind(filter_norm_data_nc@res[,c("mean_log_ratio","order","Active")],
                                          group_data)
 filter_norm_data_scaled_grouped$rank_value <- rank(-as.numeric(as.character(filter_norm_data_scaled_grouped$mean_log_ratio)))
-filter_norm_data_scaled_grouped_test <-Enrich_score(filter_norm_data_scaled_grouped, "group", "mean_log_ratio", "order")
-
+filter_norm_data_scaled_grouped_test <-Enrich_score(filter_norm_data_scaled_grouped, "group", "mean_log_ratio", "order",random=2000)
 dat_text <-filter_norm_data_scaled_grouped_test$dat_text
+random_final_E <-as.data.frame(filter_norm_data_scaled_grouped_test$random_ES)
+ggplot(random_final_E, aes(WT))+geom_histogram(binwidth = 0.001)+
+      geom_vline(xintercept = dat_text$final_ES[1])+
+      theme_classic()
+
 filter_norm_data_for_plot <- filter_norm_data_scaled_grouped_test$datasets
-#pdf("Enrichscore_of_CHD_library.pdf")
+#pdf("Enrichscore_of_Mutagenesis_library.pdf")
 
 A<-ggplot(filter_norm_data_scaled_grouped,aes(x=order,y=mean_log_ratio,color=factor(Active)))+
   geom_point(size=2)+
@@ -164,8 +173,8 @@ p_E<- ggplot(filter_norm_data_for_plot, aes(order, final_ES,color=factor(score_g
         panel.grid.minor.y = element_blank(),
         panel.grid.major.x = element_blank(),
         panel.grid.minor.x = element_blank())+
-  scale_color_manual(breaks = c("Neg","Pos",
-                                "ALT","REF"), values=c("darkblue", "darkred","blue","red"))+
+  scale_color_manual(breaks = c("NegativeControl",
+                                "ALT","WT"), values=c( "black","blue","red"))+
   geom_hline(yintercept = 0,color="skyblue",size=0.4,linetype="dashed")+
   geom_text(
     data    = dat_text,
@@ -174,6 +183,7 @@ p_E<- ggplot(filter_norm_data_for_plot, aes(order, final_ES,color=factor(score_g
     vjust   = -0.25) 
 
 A/p_E/B
+dat_text 
 ```
 ##This part is for differently enhancers bewteen REF and ALT
 
@@ -246,7 +256,7 @@ sum(inter_join$final_sig==1)
 sum(inter_join$final_sig==2)
 ```
 ```{r}
-
+sessionInfo()
 ```
 
 Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Cmd+Option+I*.
