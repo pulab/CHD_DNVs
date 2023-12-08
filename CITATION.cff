@@ -1,0 +1,24 @@
+# This CITATION.cff file was generated with cffinit.
+# Visit https://bit.ly/cffinit to generate yours today!
+
+cff-version: 1.2.0
+title: 'MPRA designer, analyzer; EpiCard'
+message: >-
+  If you use this software, please cite it using the
+  metadata from this file.
+type: software
+authors:
+  - given-names: Sarah
+    family-names: Morton
+  - given-names: Xiaoran
+    family-names: Zhang
+  - given-names: William
+    family-names: Pu
+    orcid: 'https://orcid.org/0000-0002-4551-8079'
+  - {}
+repository-code: 'https://github.com/pulab/CHD_DNVs/releases/tag/V1'
+abstract: >-
+  Code accompanying article by Xiao, Zhang, Morton, et al.,
+  "Functional dissection of human cardiac enhancers and
+  non-coding de novo variants in congenital heart disease",
+  Nature Genetics 2024
