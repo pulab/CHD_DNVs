@@ -70,6 +70,7 @@ dim(filter_norm_data@DNA)
 
 filter_norm_data <-DEGseq2_active(filter_norm_data=data_norm)
 sum(filter_norm_data@res$Active)
+write.table(DNA_total,"../data/FigureS03a_DNA_counts.txt",sep="\t",quote = F)
 ```
 ##DNA counts distribution
 ```{r}
@@ -185,6 +186,20 @@ p_E<- ggplot(filter_norm_data_for_plot, aes(order, final_ES,color=factor(score_g
 A/p_E/B
 dat_text 
 ```
+## write tables for NG
+```{r}
+df<-filter_norm_data_for_plot
+df_final <- df %>%
+  group_by(mean_log_ratio, order,Active,group,rank_value) %>%
+  summarize(score_group = toString(score_group),final_ES = toString(final_ES))
+sub<-filter_norm_data_scaled_grouped
+sub$rownames<-rownames(sub)
+df_final_write<-merge(sub,df_final,by.x="rank_value",by.y="rank_value",all.y=T)
+write.table(df_final_write,"../data/figureS03b_mut_library_result.txt",sep="\t",quote = F)
+
+#write.table(dat_text,"../data/figureS04b_CHD_library_Pvalue_and_erichscore.txt",sep="\t",quote = F)
+```
+
 ##This part is for differently enhancers bewteen REF and ALT
 
 ```{r}
@@ -254,7 +269,25 @@ ggplot(inter_join,aes(mean_WT, mean_KO,color=factor(final_sig,levels=c('0','1','
 #dev.off()
 sum(inter_join$final_sig==1)
 sum(inter_join$final_sig==2)
+write.table(inter_join,file="../data/Figure2d_mut_diff_enhancer.txt",sep="\t",quote = F)
 ```
+## figure3e
+```{r}
+inter_join_location_1<-read.table(file="../data/figure2e_mutagenesis_library_with_changed_example_2.txt",header=T,row.names = 1)
+ggplot(inter_join_location_1,aes(as.numeric (group_number), as.numeric(as.character(mean_KO))))+
+  geom_point(aes(color=factor(final_sig,levels=c('0','1','2')), alpha =factor(qvalue_0_05,levels=c("0","1")),size=factor(active,levels=c('0','1'))))+
+  theme_bw()+theme_classic()+
+  geom_hline(yintercept = 0,color="black",size=0.4,linetype="dashed")+
+  scale_color_manual(breaks = c("0", "1", "2"), values=c("gray", "red", "blue"))+
+  scale_alpha_manual(breaks = c("0", "1"), values=c(0.2, 1))+
+  scale_size_manual(breaks = c("0", "1"), values=c(2, 4))+
+  geom_line(aes(as.numeric (group_number), as.numeric(as.character(mean_WT)),alpha =factor(active_WT,levels=c("0","1"))),color="blue",linetype="dashed")+
+  geom_line(aes(as.numeric (group_number), as.numeric(as.character(KO_median)),alpha =factor(active_KO,levels=c("0","1"))),color="coral",linetype="dotdash")+
+  facet_grid(rows = vars(full_names),cols = vars(group_F),scales="free")+
+  geom_line(aes(x=as.numeric (group_number), y=as.numeric(as.character(mean_KO))), alpha=0.2)
+```
+
+
 ```{r}
 sessionInfo()
 ```
