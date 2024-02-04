@@ -184,11 +184,9 @@ print(row_names)
 #dev.off()
 
 #dev.off()
-
+#write.table(plot_gt_ls6,"../figure3g_motif_heatmap.txt",sep="\t",quote = F)
 ```
-```{r}
 
-```
 ##figure 3f
 ```{r}
 library(ggrepel)
@@ -215,11 +213,11 @@ motif_data_sig<-list_merged_motif[list_merged_motif$final_sig !=0,]
 #motif_data_sig<-list_merged_motif[list_merged_motif$final_sig !=0,]
 
 motif_data_sig_new <- merge(motif_data_sig,labels,by="motif_name",all.x=T)
-EMSA_list<-c("SRF_HUMAN.H11MO.0.A:::chr11:134277409-134277580:::GGGAGCGATCTCTCCTTTCTT:G",
-        "TBX3_HUMAN.H11MO.0.C:::chr10:22555227-22555398:::T:C")
-motif_data_sig_new$EMSA<-0
-motif_data_sig_new[motif_data_sig_new$motif_name %in% EMSA_list,"EMSA"]<-1
-sum(motif_data_sig_new$EMSA)
+#EMSA_list<-c("SRF_HUMAN.H11MO.0.A:::chr11:134277409-134277580:::GGGAGCGATCTCTCCTTTCTT:G",
+#        "TBX3_HUMAN.H11MO.0.C:::chr10:22555227-22555398:::T:C")
+#motif_data_sig_new$EMSA<-0
+#motif_data_sig_new[motif_data_sig_new$motif_name %in% EMSA_list,"EMSA"]<-1
+#sum(motif_data_sig_new$EMSA)
 
 #list_merged_motif_full<-merge(motif_data,list_file,by.y="row.names",by.x="region")
 motif_data_sig<-motif_data_sig_new[motif_data_sig_new$final_sig !=0,]
@@ -244,11 +242,13 @@ motif_data_sig_final[is.infinite(motif_data_sig_final$odds),]$odds<-5
 #motif_data_sig_new[is.na(motif_data_sig_new$odds),"odds"]<-0
 motif_data_sig_final[is.na(motif_data_sig_final$odds),]$odds <-0.5
 motif_data_sig_final[motif_data_sig_final$odds>=5,"odds"]<-5
-motif_data_sig_final[motif_data_sig_final$EMSA==1,"change_2"]<-5
+#motif_data_sig_final[motif_data_sig_final$EMSA==1,"change_2"]<-5
 #
 dim(motif_data_sig_final)
-pdf("fig3f_CHD_all_sig_motif_changes_single_with_odd.pdf",width = 6,height = 6,useDingbats = F)
-ggplot(motif_data_sig_final,aes(x=logPvalueWT,y=logPvalueALT,color=factor(change_2),shape=factor(EMSA),label=label_show,size=odds))+geom_point()+
+#pdf("fig3f_CHD_all_sig_motif_changes_single_with_odd.pdf",width = 6,height = 6,useDingbats = F)
+ggplot(motif_data_sig_final,aes(x=logPvalueWT,y=logPvalueALT,color=factor(change_2),
+                                #shape=factor(EMSA),
+                                label=label_show,size=odds))+geom_point()+
   #scale_colour_gradient2(midpoint = 0,low="blue",mid = "gray",high = "red") +
   scale_color_manual(breaks = c("0", "1", "2","5"), values=c("gray", "purple", "darkgreen","red"))+
   scale_size(range = c(0.001,0.5))+
@@ -259,10 +259,15 @@ ggplot(motif_data_sig_final,aes(x=logPvalueWT,y=logPvalueALT,color=factor(change
   geom_abline(slope = 1)+
   xlim(0,10)+ylim(0,10)+facet_grid(rows = vars(final_sig),scales="free")+
   theme(panel.background = element_rect(fill = "white", colour = "grey50"))
-dev.off()
+#dev.off()
+```
+```{r}
+write.table(motif_data_sig_final,"../data/figure_3f_table.txt",sep = "\t",quote = F)
 ```
 
-
+```{r}
+sessionInfo()
+```
 
 Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Cmd+Option+I*.
 

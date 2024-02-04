@@ -52,7 +52,9 @@ rownames(annot)<-rownames(DNA)
 colnames(annot)<-c("groups","region_name","Coding")
 data_norm<-create_MPRA_class(RNA=RNA,DNA=DNA,annot=annot)
 ```
+
 ##Plot DNA counts distribution
+
 ```{r}
 DNA_total <- as.data.frame(matrixStats::rowMins(as.matrix(data_norm@DNA)))
 colnames(DNA_total)<-"minDNA"
@@ -61,9 +63,12 @@ dim(data_norm@DNA)
 #pdf("DNA_counts_distribution_CHD.pdf")
 ggplot(DNA_total, aes(x = minDNA))+ geom_histogram(binwidth = 5,color="skyblue")+theme_bw()+theme_classic()+
   geom_vline(xintercept = 20,color="skyblue",size=0.4,linetype="dashed")+xlim(0,300)
+#write.table(DNA_total,"../data/figure3b_DNA_counts.txt",sep="\t",quote = F)
 #dev.off()
 ```
+
 ## DEseq2 to got active enhancers
+
 ```{r}
 #filter_norm_data <- filter_data(data_norm, dna_filter=0)
 filter_norm_data <-data_norm
@@ -72,7 +77,9 @@ dim(filter_norm_data@DNA)
 filter_norm_data <-DEGseq2_active(filter_norm_data=data_norm)
 sum(filter_norm_data@res$Active)
 ```
+
 ##DNA counts distribution
+
 ```{r}
 filter_norm_data_new <- filter_data(filter_norm_data, dna_filter=20)
 total_number <- length(DNA_total[,1])
@@ -88,13 +95,17 @@ DNA_counts
 ##136 alt coding
 ##140 ref coding
 ```
+
 ## got RNA/DNA ratio
+
 ```{r}
 filter_norm_data_new <-get_ratio(filter_norm_data_new)
 
 head(filter_norm_data_new@res)
 ```
+
 ##Size factor
+
 ```{r}
 Negative_C <- t(dplyr::select(as.data.frame(t(filter_norm_data_new@now_value)), !contains("::")))
 Positive_C <- t(dplyr::select(as.data.frame(t(filter_norm_data_new@now_value)), contains("::F")))
@@ -105,13 +116,15 @@ filter_norm_data_nc <-MPRA_SizeFactors(filter_norm_data_new,both_C,c(1:4))
 filter_norm_data_nc_normalize_exp<-filter_norm_data_nc@now_value
 dim(filter_norm_data_nc_normalize_exp)
 ```
+
 ##PCC cor
+
 ```{r}
 A_V_cor <- cor(filter_norm_data_nc_normalize_exp)
 p<-corrplot(A_V_cor, method  = "number",order = "alphabet")
 scatter_plot_cor(filter_norm_data_nc_normalize_exp)
 #ggplot(filter_norm_data_nc_normalize_exp,aes(x=RNA1_ratio_scaled,y=RNA2_ratio_scaled))+geom_point()+theme_bw()+theme_classic()+geom_abline(intercept = 0, slope = 1,color="black",size=0.5)+xlim(0,3)+ylim(0,3)
-
+write.table(A_V_cor,file="../data/figure3C_pcc_value.txt",quote=F,sep="\t")
 #head(filter_norm_data_nc_normalize_exp)
 ```
 
@@ -130,6 +143,7 @@ filter_norm_data_scaled$group<-filter_norm_data_nc@annot[rownames(filter_norm_da
 
 ```{r}
 ########Different activities
+
 set.seed(11)
 filter_norm_data_scaled_grouped <- as.data.frame(filter_norm_data_scaled)
 #FPM_result<-cbind(filter_norm_data_nc@now_value,filter_norm_data_scaled_grouped)
@@ -192,8 +206,24 @@ p_E<- ggplot(filter_norm_data_for_plot[filter_norm_data_for_plot$group != "Contr
     vjust   = -0.25) 
 #pdf("Enrichscore_of_CHD_library.pdf")
 A/p_E/B
+
 #dev.off()
 dat_text
+```
+
+## write tables for NG
+```{r}
+df<-filter_norm_data_for_plot[filter_norm_data_for_plot$group != "Controls",]
+
+df_final <- df %>%
+  group_by(mean_log_ratio, order,Active,group,rank_value) %>%
+  summarize(score_group = toString(score_group),final_ES = toString(final_ES))
+sub<-filter_norm_data_scaled_grouped
+sub$rownames<-rownames(sub)
+df_final_write<-merge(sub,df_final,by.x="rank_value",by.y="rank_value",all.y=T)
+write.table(df_final_write,"../data/figureS04b_CHD_library_result.txt",sep="\t",quote = F)
+
+#write.table(dat_text,"../data/figureS04b_CHD_library_Pvalue_and_erichscore.txt",sep="\t",quote = F)
 ```
 
 ##This part is for differently enhancers bewteen REF and ALT
@@ -228,7 +258,7 @@ ggplot(inter_join_filter,aes(REF, ALT,color=factor(final_sig,levels=c('0','1','2
   scale_color_manual(breaks = c("0", "1", "2"), values=c("gray", "red", "blue"))+
   scale_alpha_manual(breaks = c("0", "1"), values=c(0.2, 1))+
   xlim(-4,4)+ylim(-4,4)
-
+#write.table(inter_join_filter,file="../data/figure3d_diff_activity_chd.txt",sep="\t",quote=F)
 #dev.off()
 ```
 
@@ -271,9 +301,15 @@ sub4_for_plot$value <- as.numeric(sub4_for_plot$mean_log_ratio)
 one.way <- aov(value ~ group, data = sub4_for_plot)
 tukey.one.way<-TukeyHSD(one.way)
 p_values <- tukey.one.way$group[, "p adj"]
+#options(digits=22)
+print(p_values)
+#print(format.pval(p_values, digits = 22))
 tukey.one.way
+write.table(sub4_for_plot,"../data/figure3e_boxplot.txt",quote = F,sep="\t")
 ```
+
 ## session Info
+
 ```{r}
 sessionInfo()
 ```
