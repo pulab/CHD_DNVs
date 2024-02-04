@@ -156,7 +156,7 @@ get_ratio <-function(data, DNA_merge="Paired"){
   }
   if (DNA_merge=="Mean"){
     for (i in 1:ncols){
-      data@DNA$mean <-rowMedians(as.matrix(data@DNA))
+      data@DNA$mean <-rowMeans(as.matrix(data@DNA))
       ratio <- (data@RNA[,i]+1)/(data@DNA$mean+1)
       ratio <- log2(ratio)
       colname_i<-paste0(colnames(data@RNA)[i], "_", "ratio")
@@ -246,7 +246,8 @@ Enrich_score <- function(datasets, groups_col , value_col , order_col,random=100
   rows_number <-length(unique(datasets[,groups_col]))
   datasets2 <- datasets[FALSE,]
   datasets3 <- datasets
-  all_random_ES <- data.frame(matrix(nrow = random, ncol = 0))
+  real_random <-random-1
+  all_random_ES <- data.frame(matrix(nrow = real_random, ncol = 0))
   for (cols_name in unique(datasets[,groups_col])) {
     datasets3 <- datasets
     PC1 <- datasets3[datasets3[,groups_col]==cols_name,]
@@ -276,7 +277,7 @@ Enrich_score <- function(datasets, groups_col , value_col , order_col,random=100
     Max <- length(datasets3[,order_col])
     datasets3$Enrich_score <- datasets3[,"group_order"]/Max_pc1 - datasets3[,order_col]/Max
     random_final_E <-c()
-    for (num in c(1:random)){
+    for (num in c(1:real_random)){
       #random_set<-datasets3
       selected_regions <- sort(sample(datasets3[,order_col], size = Max_pc1, replace = FALSE))
       selected_E<-as.data.frame(selected_regions)
@@ -306,16 +307,16 @@ Enrich_score <- function(datasets, groups_col , value_col , order_col,random=100
     final_ES <-mean(datasets3[datasets3[,groups_col]==cols_name,]$Enrich_score)
     
     if (final_ES <0 ){
-      p_test <- (sum(final_ES >= random_final_E))/random
+      p_test <- (sum(final_ES >= random_final_E)+1)/(random)
     }
     if (final_ES >=0 ){
-      p_test <- (sum(final_ES <= random_final_E))/random
+      p_test <- (sum(final_ES <= random_final_E)+1)/(random)
     }
     
     p_PC1 <- p_test
     pvalue <- c(pvalue, p_PC1)
     final_ES_merged<-c(final_ES_merged,final_ES)
-
+    qvalue <-p.adjust(pvalue, method = "bonferroni")
     
     #if (max(abs(datasets3$negative_Enrich_score)) > max(abs(datasets3$Enrich_score))){
     #  datasets3$final_ES <-
@@ -330,7 +331,8 @@ Enrich_score <- function(datasets, groups_col , value_col , order_col,random=100
   dat_text <- data.frame(
     label = pvalue,
     score_group = groups_names,
-    final_ES =final_ES_merged
+    final_ES =final_ES_merged,
+    p.adjust=qvalue
   )
   
   newlist <-list("dat_text"=dat_text, "datasets"=datasets2,"random_ES"=all_random_ES)
