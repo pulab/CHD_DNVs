@@ -30,6 +30,9 @@ library(cowplot)
 library(grid)
 library(stringr)
 library(patchwork)
+```
+
+```{r}
 source(file = "./MPRA_analyzer.R") 
 ```
 ## inputfiles ReadIN
@@ -51,6 +54,7 @@ dim(data_norm@DNA)
 #pdf("DNA_counts_distribution_CHD.pdf")
 ggplot(DNA_total, aes(x = minDNA))+ geom_histogram(binwidth = 5,color="skyblue")+theme_bw()+theme_classic()+
   geom_vline(xintercept = 20,color="skyblue",size=0.4,linetype="dashed")+xlim(0,500)
+#write.table(DNA_total,"../data/figure1b_DNA_counts.txt",sep="\t",quote = F)
 #dev.off()
 ```
 ###filter low covered regions and got the active genes by DEseq2
@@ -70,6 +74,7 @@ DNA_counts <- data.frame(
   value=c(as.character(total_number),as.character(kept_number),as.character(keptratio))
 )
 DNA_counts
+
 ```
 ```{r}
 #MPRAannalyze
@@ -164,6 +169,8 @@ p<-corrplot(A_V_cor, method  = "number",order = "alphabet")
 scatter_plot_cor(filter_norm_data_nc_normalize_exp)
 ```
 
+
+
 ```{r}
 mean_log_ratio <- rowMeans(filter_norm_data_nc_normalize_exp)
 filter_norm_data_scaled <- cbind(filter_norm_data_nc_normalize_exp,mean_log_ratio)
@@ -182,23 +189,33 @@ filter_norm_data_scaled_for_plot$group3 <-filter_norm_data_nc@annot[rownames(fil
 filter_norm_data_scaled_for_plot$Active <-filter_norm_data_nc@res[rownames(filter_norm_data_scaled),"Active"]
 filter_norm_data_scaled_for_plot$group4 <- paste0(filter_norm_data_scaled_for_plot$Active,"_",
                                                   filter_norm_data_scaled_for_plot$group2)
- 
 filter_norm_data_scaled_for_plot[filter_norm_data_scaled_for_plot$group2=="Neg",]$group4 <-"Neg"
-pdf(file="/Users/zhangxiaoran/Desktop/work/Bill/Fengxiao/mau/rev_1/rev2/violin_plot_of_d17_HHE_vs_Neg_new.pdf")
+filter_norm_data_scaled_for_plot_2<-filter_norm_data_scaled_for_plot[filter_norm_data_scaled_for_plot$group2=="HHE_ATAC+",]
+filter_norm_data_scaled_for_plot_2$group4<-filter_norm_data_scaled_for_plot_2$group2
 
-ggplot(filter_norm_data_scaled_for_plot, aes(y = mean_log_ratio, x = factor(group2,levels=c("HHE_ATAC+","Neg"))))+
-  geom_violin(aes(fill = group2))+
-  geom_boxplot(aes(fill = group2),color="white",width = 0.2)+theme_bw()
-ggplot(filter_norm_data_scaled_for_plot, aes(y = mean_log_ratio, x = factor(group3,levels=c("HHE_ATAC+","Neg_1",
-                                                                                           "Neg_2"))))+
-  geom_violin(aes(fill = factor(group3)))+
-  geom_boxplot(aes(fill =factor(group3)),color="white",width = 0.2)+theme_bw()
-ggplot(filter_norm_data_scaled_for_plot, aes(y = mean_log_ratio, x = factor(group4,levels=c("1_HHE_ATAC+",
+filter_norm_data_scaled_for_plot_new<- rbind(filter_norm_data_scaled_for_plot_2,filter_norm_data_scaled_for_plot)
+#pdf(file="/Users/zhangxiaoran/Desktop/work/Bill/Fengxiao/mau/rev_1/rev2/violin_plot_of_d17_HHE_vs_Neg_new.pdf")
+#pdf(file="/Users/zhangxiaoran/Desktop/work/Bill/Fengxiao/mau/rev_1/rev2/violin_plot_of_d17_HHE_vs_Neg_new_new.pdf")
+# ggplot(filter_norm_data_scaled_for_plot, aes(y = mean_log_ratio, x = factor(group2,levels=c("HHE_ATAC+","Neg"))))+
+#   geom_violin(aes(fill = group2))+
+#   geom_boxplot(aes(fill = group2),color="white",width = 0.2)+theme_bw()
+# ggplot(filter_norm_data_scaled_for_plot, aes(y = mean_log_ratio, x = factor(group3,levels=c("HHE_ATAC+","Neg_1",
+#                                                                                            "Neg_2"))))+
+#   geom_violin(aes(fill = factor(group3)))+
+#   geom_boxplot(aes(fill =factor(group3)),color="white",width = 0.2)+theme_bw()
+# ggplot(filter_norm_data_scaled_for_plot, aes(y = mean_log_ratio, x = factor(group4,levels=c("1_HHE_ATAC+",
+#                                                                                             "0_HHE_ATAC+",
+#                                                                                            "Neg"))))+
+#   geom_violin(aes(fill = factor(group4)))+
+#   geom_boxplot(aes(fill =factor(group4)),color="white",width = 0.2)+theme_bw()
+ggplot(filter_norm_data_scaled_for_plot_new, aes(y = mean_log_ratio, x = factor(group4,levels=c("HHE_ATAC+",
+                                                                                                "1_HHE_ATAC+",
                                                                                             "0_HHE_ATAC+",
                                                                                            "Neg"))))+
   geom_violin(aes(fill = factor(group4)))+
   geom_boxplot(aes(fill =factor(group4)),color="white",width = 0.2)+theme_bw()
-dev.off()
+#dev.off()
+#write.table(filter_norm_data_scaled_for_plot_new,"../data/figureS02d_d17_boxplot.txt",sep="\t",quote=F)
 library(dplyr)
 library(ggpubr)
 data1<-filter_norm_data_scaled_for_plot[filter_norm_data_scaled_for_plot$group4 != "1_HHE_ATAC+",]
@@ -212,20 +229,14 @@ pvalue<- kruskal.test(mean_log_ratio ~ group4, data = data2)
 p_values_2 <- pvalue$p.value
 formatted_p_values <- format(p_values_2, scientific = T)
 print(formatted_p_values)
-#p<-pairwise.wilcox.test(filter_norm_data_scaled_for_plot$mean_log_ratio, filter_norm_data_scaled_for_plot$group4, p.adjust.method = "bonferroni")
-#p_values <- p$p.value
-#formatted_p_values <- format(p_values)#, scientific = FALSE)
-#print(formatted_p_values)
-#library(ggpubr)
-#library(tidyverse)
-#library(broom)
-#library(AICcmodavg)  
-#options(scipen = 999)
-#filter_norm_data_scaled_for_plot$value <- as.numeric(filter_norm_data_scaled_for_plot$mean_log_ratio)
-#one.way <- aov(value ~ group4, data = filter_norm_data_scaled_for_plot)
-#tukey.one.way<-TukeyHSD(one.way)
-#p_values <- tukey.one.way$group[, "p adj"]
-#tukey.one.way
+data3<-filter_norm_data_scaled_for_plot_new[filter_norm_data_scaled_for_plot_new$group4 != "1_HHE_ATAC+" & filter_norm_data_scaled_for_plot_new$group4 != "0_HHE_ATAC+",]
+pvalue<- kruskal.test(mean_log_ratio ~ group4, data = data3)
+#pvalue<- kruskal.test(mean_log_ratio ~ group4, data = filter_norm_data_scaled_for_plot)
+p_values_3 <- pvalue$p.value
+formatted_p_values <- format(p_values_3, scientific = T)
+print(formatted_p_values)
+table(filter_norm_data_scaled_for_plot_new$group4)
+
 ```
 Plot the enhancers activity and rank and group information.
 
@@ -282,6 +293,26 @@ p_E<- ggplot(filter_norm_data_for_plot, aes(order, final_ES,color=factor(score_g
 A/p_E/B
 dat_text
 ```
+```{r}
+#write.table(dat_text,"../data/figure1c_d17_pvalue.txt",sep="\t",quote=F)
+#write.table(filter_norm_data_scaled_grouped,"../data/figure1c_d17_rawdata.txt",sep="\t",quote=F)
+#write.table(filter_norm_data_for_plot,"../data/figure1c_d17_enrichscore.txt",sep="\t",quote=F)
+```
+
+## write tables for NG
+```{r}
+df<-filter_norm_data_for_plot
+df_final <- df %>%
+  group_by(mean_log_ratio, order,Active,group,rank_value) %>%
+  summarize(score_group = toString(score_group),final_ES = toString(final_ES))
+sub<-filter_norm_data_scaled_grouped
+sub$rownames<-rownames(sub)
+df_final_write<-merge(sub,df_final,by.x="rank_value",by.y="rank_value",all.y=T)
+write.table(df_final_write,"../data/figure1c_d17_library_result.txt",sep="\t",quote = F)
+
+#write.table(dat_text,"../data/figureS04b_CHD_library_Pvalue_and_erichscore.txt",sep="\t",quote = F)
+```
+
 ## compared the result with MPRAannalyze
 ```{r}
 #head(filter_norm_data_scaled_grouped)
@@ -331,6 +362,52 @@ dat_text
 #   geom_point()+theme_bw()+theme_classic()+geom_abline(slope = 1,color="black",size=0.2,linetype="dashed")+ xlim(-4,4)+ylim(-2,4)
 
 ```
+## d17 & d24 merged
+```{r}
+d24_filter_norm_data_nc_normalize_exp<-read.table(file="../data/d24_batch1-2__normalized_log2_ratio_add1.txt",header=T,row.names = 1)
+d17_filter_norm_data_nc_normalize_exp <- read.table(file="../data/d17_batch1-2__normalized_log2_ratio_add1.txt",header=T,row.names = 1)
+d17_d24_filter_norm_data_nc_normalize_exp<- merge(d17_filter_norm_data_nc_normalize_exp,d24_filter_norm_data_nc_normalize_exp,
+                                                  by="row.names")
+rownames(d17_d24_filter_norm_data_nc_normalize_exp)<-d17_d24_filter_norm_data_nc_normalize_exp$Row.names
+d17_d24_filter_norm_data_nc_normalize_exp<-d17_d24_filter_norm_data_nc_normalize_exp[,c(2:length(d17_d24_filter_norm_data_nc_normalize_exp[1,]))]
+colnames(d17_d24_filter_norm_data_nc_normalize_exp)<-c("D17_rep1","D17_rep2","D17_rep3","D17_rep4","D17_rep5","D17_rep6",
+                                                       "D24_rep1","D24_rep2","D24_rep3","D24_rep4","D24_rep5","D24_rep6")
+#pdf("D17_D24_pcc_new5.pdf",width = 14, height = 14)
+my_cols <- c("black") 
+panel.cor <- function(x, y){
+  usr <- par("usr"); on.exit(par(usr))
+  par(usr = c(0, 1, 0, 1))
+  r <- round(cor(x, y), digits=2)
+  txt <- paste0("R = ", r)
+  cex.cor <- 0.8/strwidth(txt)
+  text(0.5, 0.5, txt, cex = cex.cor*4 )
+}
+
+# Customize upper panel
+upper.panel<-function(x, y){
+  points(x,y, pch = 19, col = my_cols[iris$Species],cex=0.1)
+}
+# Create the plots
+pairs(d17_d24_filter_norm_data_nc_normalize_exp, 
+      lower.panel = panel.cor,
+      upper.panel = upper.panel)
+A_V_cor_merge <- cor(d17_d24_filter_norm_data_nc_normalize_exp)
+p<-corrplot(A_V_cor_merge, method  = "number",order = "alphabet",type="uper")
+pheatmap(p$corr,cluster_cols=F, cluster_rows=F,col=colorRampPalette(c("blue","white","firebrick3"))(100),breaks=seq(0.5,1,0.005))
+pheatmap(p$corr,cluster_cols=F, cluster_rows=F,col=colorRampPalette(c("blue","white","firebrick3"))(100))
+corrplot(A_V_cor_merge,method="color",addgrid.col ="White",
+         col.lim=c(0,1), addCoef.col = 'black',col=colorRampPalette(c("blue","white","red"))(200))
+
+pairs(d17_d24_filter_norm_data_nc_normalize_exp, 
+      lower.panel = panel.cor,
+      upper.panel = upper.panel)
+#dev.off()
+
+scatter_plot_cor(d17_d24_filter_norm_data_nc_normalize_exp)
+write.table(A_V_cor_merge,"../data/FigureS02b_d17_d24_merged_cor.txt",sep="\t",quote = F)
+```
+
+
 ```{r}
 sessionInfo()
 ```
